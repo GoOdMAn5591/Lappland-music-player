@@ -1,0 +1,43 @@
+{
+  "name": "lappland-tavern-player",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Immersive local music player with a curved tavern bar and animated drink carousel.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GoOdMAn5591/Lappland-music-player.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "smoke": "node scripts/smoke-test.mjs",
+    "test:scene": "node scripts/scene-test.mjs",
+    "test:persistence": "node scripts/persistence-test.mjs",
+    "test:architecture": "node scripts/architecture-test.mjs",
+    "test:production": "node scripts/production-test.mjs",
+    "test": "npm run smoke && npm run test:scene && npm run test:persistence && npm run test:architecture"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "idb": "^8.0.0",
+    "lucide-react": "^0.468.0",
+    "music-metadata": "^12.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.186.1",
+    "vite": "^6.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.186.0",
+    "typescript": "^5.7.2"
+  }
+}

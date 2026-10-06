@@ -1,0 +1,436 @@
+.tavern-shell[data-entry="closed"],
+.tavern-shell[data-entry="opening"] {
+  transform-origin: 50% 43%;
+}
+.tavern-shell[data-entry="closed"] {
+  transform: scale(0.94);
+  filter: brightness(0.54);
+}
+.tavern-shell[data-entry="opening"] {
+  animation: enter-the-bar 3.2s cubic-bezier(0.2, 0.6, 0.25, 1) both;
+}
+@keyframes enter-the-bar {
+  from {
+    transform: scale(0.94);
+    filter: brightness(0.54);
+  }
+  to {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+.tavern-entrance {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  color: #dfc58c;
+  background: linear-gradient(90deg, #080e0bcc, transparent 37% 63%, #080e0bcc);
+}
+.door-scene {
+  position: absolute;
+  inset: 0;
+}
+.door-scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.entrance-spill {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background: linear-gradient(
+    90deg,
+    transparent calc(50% - 3px),
+    #ffd89166 50%,
+    transparent calc(50% + 3px)
+  );
+}
+.entrance-spill::after {
+  content: "";
+  position: absolute;
+  bottom: -3%;
+  left: 28%;
+  width: 44%;
+  height: 29%;
+  background: linear-gradient(180deg, #f8c86b22, transparent);
+  clip-path: polygon(49% 0, 51% 0, 100% 100%, 0 100%);
+  filter: blur(5px);
+}
+.door-inscription {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 1px #070906,
+    0 0 24px #d4a45033;
+  pointer-events: none;
+}
+.door-inscription > span {
+  font:
+    10px Georgia,
+    serif;
+  color: #a48c5c;
+}
+.door-inscription h1 {
+  font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
+  font-weight: 400;
+  font-size: 44px;
+  line-height: 1.5;
+  margin: 12px 0 6px;
+  letter-spacing: 0;
+}
+.door-inscription p {
+  font:
+    10px Georgia,
+    serif;
+  margin: 0;
+  color: #b9a379;
+}
+.entrance-actions {
+  position: absolute;
+  left: 50%;
+  bottom: 21%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+}
+.enter-tavern {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 52px;
+  min-width: 205px;
+  padding: 12px 24px;
+  border: 1px solid #b9995c;
+  background: linear-gradient(115deg, #202721e6, #302825e6);
+  color: #f0ddb2;
+  box-shadow:
+    inset 0 0 0 3px #111711,
+    0 7px 23px #0009;
+  font-size: 15px;
+  cursor: pointer;
+  transition:
+    box-shadow 0.2s,
+    color 0.2s;
+}
+.enter-tavern:hover,
+.enter-tavern:focus-visible {
+  color: #fff3c4;
+  box-shadow:
+    inset 0 0 0 3px #161b16,
+    0 0 23px #e8ba5033;
+  outline: 1px solid #e2c17c;
+  outline-offset: 4px;
+}
+.enter-tavern:active {
+  background: #594634;
+}
+.enter-tavern:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+.remember-entrance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b9ad94;
+  font-size: 12px;
+}
+.remember-entrance input,
+.cellar-toggle input {
+  accent-color: #bc9657;
+  width: 15px;
+  height: 15px;
+}
+.skip-entrance {
+  position: absolute;
+  right: 30px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: #b7b3a3;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 12px;
+}
+.skip-entrance:hover,
+.skip-entrance:focus-visible {
+  color: #ffe2a2;
+}
+.entrance-edition {
+  position: absolute;
+  left: 38px;
+  bottom: 42px;
+  font:
+    9px Georgia,
+    serif;
+  color: #9b977e;
+}
+.is-opening {
+  animation: entrance-dismiss 3.2s ease-in both;
+  pointer-events: none;
+}
+.is-opening .skip-entrance {
+  pointer-events: auto;
+}
+.is-opening .door-inscription,
+.is-opening .entrance-actions {
+  transition: opacity 0.35s;
+  opacity: 0;
+}
+.is-opening .entrance-spill {
+  animation: door-light 3.2s ease-in-out both;
+}
+@keyframes entrance-dismiss {
+  0%,
+  65% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes door-light {
+  0% {
+    opacity: 0.5;
+    transform: scaleX(1);
+  }
+  45% {
+    opacity: 0.75;
+    transform: scaleX(25);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(90);
+  }
+}
+.door-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  background: #101b16;
+}
+.door-fallback i {
+  width: 50%;
+  border: 15px ridge #4a4534;
+  background: repeating-linear-gradient(
+    89deg,
+    #2f2823 0 2px,
+    #292922 3px 8px,
+    #303028 9px 11px
+  );
+  box-shadow: inset 0 0 90px #000;
+  transition: transform 2.6s ease-in-out;
+}
+.is-opening .door-fallback i:first-child {
+  transform: translateX(-100%);
+}
+.is-opening .door-fallback i:last-child {
+  transform: translateX(100%);
+}
+.library-settings {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  background: #171c1af5;
+  color: #ddd7c9;
+  border: 1px solid #90774d;
+  padding: 24px;
+  border-radius: 4px;
+  box-shadow: 0 30px 100px #000b;
+}
+.library-settings::backdrop {
+  background: #050807ab;
+  backdrop-filter: blur(5px);
+}
+.library-settings h2 {
+  font-size: 23px;
+  margin: 6px 0 0;
+}
+.library-settings h3 {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+.cellar-statistics {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  padding: 22px 0;
+  flex-wrap: wrap;
+  color: #cbb47c;
+}
+.cellar-statistics > div {
+  display: grid;
+  gap: 5px;
+}
+.cellar-statistics strong {
+  font:
+    28px Georgia,
+    serif;
+}
+.cellar-statistics span {
+  font-size: 12px;
+  color: #aeb7aa;
+}
+.cellar-statistics dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 6px 0 0;
+}
+.cellar-statistics dl div {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: #aeb7aa;
+}
+.cellar-statistics dd {
+  margin: 0;
+  color: #e6dec9;
+  font-size: 15px;
+}
+.cellar-section {
+  border-top: 1px solid #b59b5933;
+  padding: 18px 0;
+}
+.cellar-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.cellar-section p {
+  font-size: 12px;
+  line-height: 1.75;
+  color: #aaafa5;
+  margin: 12px 0;
+}
+.cellar-section meter {
+  width: 100%;
+  height: 7px;
+  margin: 15px 0 0;
+  accent-color: #b49a58;
+}
+.storage-protected,
+.storage-caution {
+  font-size: 11px;
+  color: #9abe9d;
+}
+.storage-caution {
+  color: #d2ab74;
+}
+.cellar-command {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #d5be88;
+  border: 1px solid #bda56644;
+  padding: 9px 12px;
+  border-radius: 3px;
+  background: #0c141533;
+  cursor: pointer;
+  font-size: 12px;
+}
+.cellar-command:hover,
+.cellar-command:focus-visible {
+  border-color: #d5be88;
+  background: #d5be880a;
+}
+.cellar-command:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cellar-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  margin-top: 12px;
+  color: #c1c5b9;
+}
+.cellar-danger .cellar-command {
+  color: #dfaaa4;
+  border-color: #c9858055;
+}
+.cellar-confirm {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cellar-message {
+  margin: 0;
+  min-height: 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #cdbb8a;
+}
+.library-summary {
+  border: 0;
+  background: transparent;
+  color: #c5b188;
+  cursor: pointer;
+  font-size: 11px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+.session-only {
+  color: #d4a271;
+  font-size: 10px;
+}
+@media (max-width: 760px) {
+  .door-inscription {
+    top: 27%;
+  }
+  .door-inscription h1 {
+    font-size: 34px;
+  }
+  .entrance-actions {
+    bottom: 24%;
+  }
+  .entrance-edition {
+    left: 20px;
+    bottom: 90px;
+  }
+  .skip-entrance {
+    right: 14px;
+    bottom: 24px;
+  }
+  .library-settings {
+    padding: 20px;
+  }
+  .status-strip {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tavern-shell[data-entry="closed"],
+  .tavern-shell[data-entry="opening"] {
+    transform: none;
+    filter: none;
+    animation: none;
+  }
+  .is-opening,
+  .is-opening .entrance-spill {
+    animation-duration: 0.18s;
+  }
+}
