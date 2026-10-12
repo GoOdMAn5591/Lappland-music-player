@@ -26,5 +26,16 @@ jobs:
             if curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then break; fi
             sleep 1
           done
-          npm test
+          # run every suite, and put the reason for a failure in the run's annotations
+          status=0
+          for suite in smoke test:scene test:persistence test:architecture; do
+            echo "::group::$suite"
+            if ! npm run "$suite" > "/tmp/suite.log" 2>&1; then
+              status=1
+              echo "::error title=$suite failed::$(tail -c 2500 /tmp/suite.log | tr '\n\r' '  ')"
+            fi
+            cat /tmp/suite.log
+            echo "::endgroup::"
+          done
+          exit $status
       - run: npm run test:production
