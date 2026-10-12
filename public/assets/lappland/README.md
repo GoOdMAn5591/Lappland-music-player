@@ -1,7 +1,8 @@
 # Local Character Asset
 
-The supplied transparent PNG is included as `lappland-cutout-transparent.png`.
-The project owner confirmed permission to distribute this specific image on 2026-10-05.
+The supplied transparent PNG is included as `lappland-cutout-transparent.png` (owner's replacement
+cutout of 2026-10-09; see ASSETS.md). The project owner confirmed permission to distribute the
+earlier cutout of the same artwork on 2026-10-05.
 This confirmation is not an independent copyright verification. The MIT code license
 does not license Lappland, Arknights, or the supplied artwork for other uses.
 Other image files are ignored by default. A missing asset displays an image-import

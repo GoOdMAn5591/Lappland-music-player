@@ -26,3 +26,5 @@ public/assets/**/*.webp
 *.m4a
 *.aac
 local-artwork/
+# cloudflared, downloaded on first 同席 use
+tools/

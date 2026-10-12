@@ -1,5 +1,4 @@
 export const features = {
-  spotify: import.meta.env.VITE_ENABLE_SPOTIFY === "true",
   multiplayer: import.meta.env.VITE_ENABLE_MULTIPLAYER === "true",
 };
 export const spotifyConfig = {

@@ -19,6 +19,7 @@ import {
   rememberEntrance,
   skipEntrancePreference,
 } from "../entrance/TavernEntrance";
+import { t } from "../i18n";
 
 export const formatBytes = (bytes: number) =>
   bytes >= 1024 ** 3
@@ -70,10 +71,10 @@ export function LocalCellarManager({
     setInfo(await inspectStorage());
     setMessage(
       result === "persistent"
-        ? "持久化保护已开启。"
+        ? t("持久化保护已开启。")
         : result === "best-effort"
-          ? "浏览器暂未授予保护，文件仍保存在本机；空间紧张时可能被清理。"
-          : "浏览器不支持持久化保护，请保留原音频文件。",
+          ? t("浏览器暂未授予保护，文件仍保存在本机；空间紧张时可能被清理。")
+          : t("浏览器不支持持久化保护，请保留原音频文件。"),
     );
     setWorking(false);
   };
@@ -87,11 +88,11 @@ export function LocalCellarManager({
       <header className="drawer-heading">
         <div>
           <p className="eyebrow">THE PRIVATE CELLAR</p>
-          <h2 id="library-title">本地酒窖</h2>
+          <h2 id="library-title">{t("本地酒窖")}</h2>
         </div>
         <button
           className="icon-button"
-          aria-label="关闭酒窖管理"
+          aria-label={t("关闭酒窖管理")}
           onClick={onClose}
         >
           <X size={19} />
@@ -101,32 +102,32 @@ export function LocalCellarManager({
         <Database size={25} />
         <div>
           <strong data-testid="library-bytes">
-            {info ? formatBytes(info.bytes) : "读取中"}
+            {info ? formatBytes(info.bytes) : t("读取中")}
           </strong>
-          <span>{info?.files ?? 0} 首已存入 · 含音频和封面</span>
+          <span>{t("{n} 首已存入 · 含音频和封面", { n: info?.files ?? 0 })}</span>
         </div>
         <dl>
           <div>
-            <dt>本次可播放</dt>
+            <dt>{t("本次可播放")}</dt>
             <dd>
-              {tracks.filter((track) => track.status === "ready").length} 首
+              {t("{n} 首", { n: tracks.filter((track) => track.status === "ready").length })}
             </dd>
           </div>
           <div>
-            <dt>需重新导入</dt>
+            <dt>{t("需重新导入")}</dt>
             <dd>
-              {tracks.filter((track) => track.status === "missing").length} 首
+              {t("{n} 首", { n: tracks.filter((track) => track.status === "missing").length })}
             </dd>
           </div>
           <div>
-            <dt>仅本次会话</dt>
+            <dt>{t("仅本次会话")}</dt>
             <dd>
               {
                 tracks.filter(
                   (track) => track.status === "ready" && !track.stored,
                 ).length
               }{" "}
-              首
+              {t("首")}
             </dd>
           </div>
         </dl>
@@ -134,7 +135,7 @@ export function LocalCellarManager({
       <CellarInventory tracks={tracks} busy={busy} onDelete={onDelete} />
       <section className="cellar-section">
         <div className="cellar-heading">
-          <h3>存储状态</h3>
+          <h3>{t("存储状态")}</h3>
           <span
             className={
               info?.persistence === "persistent"
@@ -143,25 +144,27 @@ export function LocalCellarManager({
             }
           >
             {!info
-              ? "读取中"
+              ? t("读取中")
               : !info.available
-                ? "音频存储不可用"
+                ? t("音频存储不可用")
                 : info.persistence === "persistent"
-                  ? "已获持久化保护"
-                  : "普通本地存储"}
+                  ? t("已获持久化保护")
+                  : t("普通本地存储")}
           </span>
         </div>
         {info?.quota ? (
           <>
             <meter min={0} max={info.quota} value={info.usage ?? 0} />
             <p>
-              本站占用约 {formatBytes(info.usage ?? 0)} / 可用配额{" "}
-              {formatBytes(info.quota)}，包含角色素材等数据。
+              {t("本站占用约 {used} / 可用配额 {quota}，包含角色素材等数据。", {
+                used: formatBytes(info.usage ?? 0),
+                quota: formatBytes(info.quota),
+              })}
             </p>
           </>
         ) : null}
         <p>
-          音频仅保存在这个浏览器。清除网站数据、无痕模式或浏览器清理可能移除文件，请保留原件。
+          {t("音频仅保存在这个浏览器。清除网站数据、无痕模式或浏览器清理可能移除文件，请保留原件。")}
         </p>
         <button
           className="cellar-command"
@@ -169,15 +172,15 @@ export function LocalCellarManager({
           onClick={() => void request()}
         >
           <ShieldCheck size={17} />
-          申请持久化保护
+          {t("申请持久化保护")}
         </button>
       </section>
       <section className="cellar-section">
         <div className="cellar-heading">
-          <h3>入场仪式</h3>
+          <h3>{t("入场仪式")}</h3>
           <button className="cellar-command" onClick={onReplay}>
             <DoorOpen size={17} />
-            重播入场
+            {t("重播入场")}
           </button>
         </div>
         <label className="cellar-toggle">
@@ -189,28 +192,28 @@ export function LocalCellarManager({
               rememberEntrance(event.target.checked);
             }}
           />
-          下次直接进入吧台
+          {t("下次直接进入吧台")}
         </label>
       </section>
       <section className="cellar-section">
         <div className="cellar-heading">
-          <h3>备份菜单</h3>
+          <h3>{t("备份菜单")}</h3>
           <button className="cellar-command" onClick={onImport} disabled={busy}>
             <FileUp size={17} />
-            导入 JSON
+            {t("导入 JSON")}
           </button>
           <button className="cellar-command" onClick={onExport}>
             <FileDown size={17} />
-            导出 JSON
+            {t("导出 JSON")}
           </button>
         </div>
-        <p>JSON 只含歌单和调酒笔记，不含音频。包含音频的完整备份包尚未提供。</p>
+        <p>{t("JSON 只含歌单和调酒笔记，不含音频。包含音频的完整备份包尚未提供。")}</p>
       </section>
       <section className="cellar-section cellar-danger">
         {confirm ? (
           <>
             <p>
-              清空本浏览器的全部歌曲、封面、歌单和笔记？原文件及角色图片不受影响。
+              {t("清空本浏览器的全部歌曲、封面、歌单和笔记？原文件及角色图片不受影响。")}
             </p>
             <div className="cellar-confirm">
               <button
@@ -223,18 +226,18 @@ export function LocalCellarManager({
                   setConfirm(false);
                   setInfo(await inspectStorage());
                   setMessage(
-                    ok ? "酒窖已清空。" : "清空失败，原音乐库仍然保留。",
+                    ok ? t("酒窖已清空。") : t("清空失败，原音乐库仍然保留。"),
                   );
                 }}
               >
                 <Trash2 size={17} />
-                确认清空音乐库
+                {t("确认清空音乐库")}
               </button>
               <button
                 className="cellar-command"
                 onClick={() => setConfirm(false)}
               >
-                取消
+                {t("取消")}
               </button>
             </div>
           </>
@@ -245,7 +248,7 @@ export function LocalCellarManager({
             onClick={() => setConfirm(true)}
           >
             <Trash2 size={17} />
-            清空本地酒窖
+            {t("清空本地酒窖")}
           </button>
         )}
       </section>

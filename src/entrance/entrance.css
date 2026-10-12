@@ -1,12 +1,12 @@
-.tavern-shell[data-entry="closed"],
-.tavern-shell[data-entry="opening"] {
+.tavern-app[data-entry="closed"],
+.tavern-app[data-entry="opening"] {
   transform-origin: 50% 43%;
 }
-.tavern-shell[data-entry="closed"] {
+.tavern-app[data-entry="closed"] {
   transform: scale(0.94);
   filter: brightness(0.54);
 }
-.tavern-shell[data-entry="opening"] {
+.tavern-app[data-entry="opening"] {
   animation: enter-the-bar 3.2s cubic-bezier(0.2, 0.6, 0.25, 1) both;
 }
 @keyframes enter-the-bar {
@@ -25,7 +25,7 @@
   z-index: 100;
   overflow: hidden;
   color: #dfc58c;
-  background: linear-gradient(90deg, #080e0bcc, transparent 37% 63%, #080e0bcc);
+  background: linear-gradient(90deg, #0a0504d9, transparent 37% 63%, #0a0504d9);
 }
 .door-scene {
   position: absolute;
@@ -72,25 +72,25 @@
   pointer-events: none;
 }
 .door-inscription > span {
-  font:
-    10px Georgia,
-    serif;
-  color: #a48c5c;
+  font: 600 10px/1.2 var(--display);
+  letter-spacing: 0.3em;
+  color: #b8975c;
 }
 .door-inscription h1 {
-  font-family: "Noto Serif SC", "Songti SC", SimSun, serif;
-  font-weight: 400;
-  font-size: 44px;
-  line-height: 1.5;
+  font: 600 48px/1.4 var(--serif-sc);
   margin: 12px 0 6px;
-  letter-spacing: 0;
+  letter-spacing: 0.18em;
+  background: linear-gradient(180deg, #fff1cc 10%, #e0b56c 55%, #a8772f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.9));
 }
 .door-inscription p {
-  font:
-    10px Georgia,
-    serif;
+  font: 600 10px/1.2 var(--display);
+  letter-spacing: 0.32em;
   margin: 0;
-  color: #b9a379;
+  color: #c9aa6e;
 }
 .entrance-actions {
   position: absolute;
@@ -109,13 +109,14 @@
   min-height: 52px;
   min-width: 205px;
   padding: 12px 24px;
-  border: 1px solid #b9995c;
-  background: linear-gradient(115deg, #202721e6, #302825e6);
-  color: #f0ddb2;
+  border: 1px solid #c9a464;
+  background: linear-gradient(115deg, #2a0f14e6, #3a1a12e6);
+  color: #f6e1b0;
   box-shadow:
-    inset 0 0 0 3px #111711,
+    inset 0 0 0 3px #140807,
     0 7px 23px #0009;
-  font-size: 15px;
+  font: 600 15px/1 var(--serif-sc);
+  letter-spacing: 0.24em;
   cursor: pointer;
   transition:
     box-shadow 0.2s,
@@ -125,7 +126,7 @@
 .enter-tavern:focus-visible {
   color: #fff3c4;
   box-shadow:
-    inset 0 0 0 3px #161b16,
+    inset 0 0 0 3px #1a0a08,
     0 0 23px #e8ba5033;
   outline: 1px solid #e2c17c;
   outline-offset: 4px;
@@ -172,10 +173,9 @@
   position: absolute;
   left: 38px;
   bottom: 42px;
-  font:
-    9px Georgia,
-    serif;
-  color: #9b977e;
+  font: 600 9px/1.2 var(--display);
+  letter-spacing: 0.28em;
+  color: #a68c62;
 }
 .is-opening {
   animation: entrance-dismiss 3.2s ease-in both;
@@ -221,7 +221,7 @@
   display: flex;
   gap: 3px;
   justify-content: center;
-  background: #101b16;
+  background: #140908;
 }
 .door-fallback i {
   width: 50%;
@@ -241,161 +241,6 @@
 .is-opening .door-fallback i:last-child {
   transform: translateX(100%);
 }
-.library-settings {
-  width: min(520px, calc(100vw - 32px));
-  max-height: calc(100dvh - 40px);
-  overflow: auto;
-  background: #171c1af5;
-  color: #ddd7c9;
-  border: 1px solid #90774d;
-  padding: 24px;
-  border-radius: 4px;
-  box-shadow: 0 30px 100px #000b;
-}
-.library-settings::backdrop {
-  background: #050807ab;
-  backdrop-filter: blur(5px);
-}
-.library-settings h2 {
-  font-size: 23px;
-  margin: 6px 0 0;
-}
-.library-settings h3 {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0;
-}
-.cellar-statistics {
-  display: flex;
-  align-items: center;
-  gap: 17px;
-  padding: 22px 0;
-  flex-wrap: wrap;
-  color: #cbb47c;
-}
-.cellar-statistics > div {
-  display: grid;
-  gap: 5px;
-}
-.cellar-statistics strong {
-  font:
-    28px Georgia,
-    serif;
-}
-.cellar-statistics span {
-  font-size: 12px;
-  color: #aeb7aa;
-}
-.cellar-statistics dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  width: 100%;
-  margin: 6px 0 0;
-}
-.cellar-statistics dl div {
-  display: grid;
-  gap: 8px;
-  font-size: 12px;
-  color: #aeb7aa;
-}
-.cellar-statistics dd {
-  margin: 0;
-  color: #e6dec9;
-  font-size: 15px;
-}
-.cellar-section {
-  border-top: 1px solid #b59b5933;
-  padding: 18px 0;
-}
-.cellar-heading {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-.cellar-section p {
-  font-size: 12px;
-  line-height: 1.75;
-  color: #aaafa5;
-  margin: 12px 0;
-}
-.cellar-section meter {
-  width: 100%;
-  height: 7px;
-  margin: 15px 0 0;
-  accent-color: #b49a58;
-}
-.storage-protected,
-.storage-caution {
-  font-size: 11px;
-  color: #9abe9d;
-}
-.storage-caution {
-  color: #d2ab74;
-}
-.cellar-command {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: #d5be88;
-  border: 1px solid #bda56644;
-  padding: 9px 12px;
-  border-radius: 3px;
-  background: #0c141533;
-  cursor: pointer;
-  font-size: 12px;
-}
-.cellar-command:hover,
-.cellar-command:focus-visible {
-  border-color: #d5be88;
-  background: #d5be880a;
-}
-.cellar-command:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.cellar-toggle {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 12px;
-  margin-top: 12px;
-  color: #c1c5b9;
-}
-.cellar-danger .cellar-command {
-  color: #dfaaa4;
-  border-color: #c9858055;
-}
-.cellar-confirm {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.cellar-message {
-  margin: 0;
-  min-height: 16px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: #cdbb8a;
-}
-.library-summary {
-  border: 0;
-  background: transparent;
-  color: #c5b188;
-  cursor: pointer;
-  font-size: 11px;
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  white-space: nowrap;
-}
-.session-only {
-  color: #d4a271;
-  font-size: 10px;
-}
 @media (max-width: 760px) {
   .door-inscription {
     top: 27%;
@@ -414,17 +259,10 @@
     right: 14px;
     bottom: 24px;
   }
-  .library-settings {
-    padding: 20px;
-  }
-  .status-strip {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tavern-shell[data-entry="closed"],
-  .tavern-shell[data-entry="opening"] {
+  .tavern-app[data-entry="closed"],
+  .tavern-app[data-entry="opening"] {
     transform: none;
     filter: none;
     animation: none;

@@ -131,7 +131,7 @@ try {
   ).toBeEnabled();
   await expect(page.locator(".door-scene canvas")).toBeVisible();
   expect(await page.evaluate(() => window.__bellStarts)).toBe(0);
-  expect(await page.locator(".tavern-shell").evaluate((el) => el.inert)).toBe(
+  expect(await page.locator(".tavern-app").evaluate((el) => el.inert)).toBe(
     true,
   );
   await page.screenshot({ path: path.join(output, "entrance-desktop.png") });
@@ -155,7 +155,7 @@ try {
   });
   expect(await page.locator("audio").evaluate((a) => a.paused)).toBe(true);
   await page.locator('input[accept*="audio"]').setInputFiles(files);
-  await expect(page.locator(".status-strip")).toContainText(
+  await expect(page.locator(".status-toast")).toContainText(
     "音频与封面已存入本地酒窖",
   );
   await expect(page.locator(".drink-row")).toHaveCount(3);
@@ -163,7 +163,8 @@ try {
   const blobs = await readStore(page, "audio");
   expect(blobs).toHaveLength(3);
   expect(blobs[0].cover).toBeGreaterThan(50);
-  await page.locator(".drink-row").first().click();
+  await page.getByLabel("打开酒单", { exact: true }).click();
+  await page.locator(".drink-row .drink-main").first().click();
   await expect(page.getByLabel("暂停", { exact: true })).toBeVisible();
   await expect
     .poll(() => page.locator("audio").evaluate((a) => a.currentTime))
@@ -173,6 +174,7 @@ try {
   await page.getByLabel("饮品别名", { exact: true }).fill("琥珀夜航");
   await page.getByLabel("口味标签", { exact: true }).fill("午夜, 柔和");
   await page.getByLabel("关闭编辑", { exact: true }).click();
+  await page.getByLabel("新建歌单", { exact: true }).click();
   await page.getByPlaceholder("新菜单名").fill("持久珍藏");
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: /今日特调/ }).click();
@@ -239,7 +241,7 @@ try {
   await page
     .locator('input[accept*="application/json"]')
     .setInputFiles(exportPath);
-  await expect(page.locator(".status-strip")).toContainText("菜单配置导入成功");
+  await expect(page.locator(".status-toast")).toContainText("菜单配置导入成功");
   expect(await page.locator("audio").getAttribute("src")).toMatch(/^blob:/);
   await page.getByLabel("本地酒窖与入场设置", { exact: true }).click();
   await expect(page.getByTestId("library-bytes")).not.toHaveText("0.00 MB");
@@ -272,12 +274,14 @@ try {
   await page
     .getByRole("button", { name: "确认清空音乐库", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("酒窖已清空");
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText(
+    "酒窖已清空",
+  );
   await page.getByLabel("关闭酒窖管理").click();
   await page.reload();
   await expect(page.locator(".drink-row")).toHaveCount(0);
   expect(await readStore(page, "audio")).toHaveLength(0);
-  await expect(page.locator(".portrait-renderer canvas")).toBeVisible();
+  await expect(page.locator(".tavern-canvas")).toBeVisible();
   const alpha = await page.evaluate(async () => {
     const im = new Image();
     im.src = "/assets/lappland/lappland-cutout-transparent.png";
@@ -359,27 +363,21 @@ try {
   await legacy.goto(url);
   await expect(legacy.locator(".drink-row")).toHaveCount(1);
   await expect(legacy.locator(".drink-row")).toContainText("保留的别名");
-  await expect(legacy.locator(".warning-tag").first()).toContainText(
+  await expect(legacy.locator(".drink-tags .warn").first()).toContainText(
     "需重新导入",
   );
-  await expect(legacy.locator(".portrait-renderer canvas")).toBeVisible();
+  await expect(legacy.locator(".tavern-canvas")).toBeVisible();
   await legacy.waitForTimeout(450);
-  const migrated = await legacy.evaluate(async () => {
-    const { openDB } = await import("/node_modules/.vite/deps/idb.js");
-    const db = await openDB("tavern-character", 1);
-    const asset = await db.get("portrait", "lappland");
-    db.close();
-    return {
-      name: asset.name,
-      type: asset.blob.type,
-      outline: asset.rig.outline.length,
-      motion: asset.rig.motion,
-    };
-  });
+  // The old version kept the composition next to an imported picture in
+  // IndexedDB; only the composition carries over (the picture is fixed now).
+  const migrated = await legacy.evaluate(() =>
+    JSON.parse(localStorage.getItem("tavern-character-rig") ?? "null"),
+  );
   expect(migrated).toEqual({
-    name: "lappland-cutout-transparent-recommended.png",
-    type: "image/png",
-    outline: 0,
+    version: 3,
+    zoom: 1.02,
+    x: -8,
+    y: -2,
     motion: 0.4,
   });
   expect(await readStore(legacy, "audio")).toHaveLength(0);
@@ -388,7 +386,7 @@ try {
     mimeType: "application/json",
     buffer: Buffer.from('{"tracks":[{"id":"bad","tags":[]}],"playlists":[]}'),
   });
-  await expect(legacy.locator(".status-strip")).toContainText(
+  await expect(legacy.locator(".status-toast")).toContainText(
     "不是有效的酒馆菜单配置",
   );
   await expect(legacy.locator(".drink-row")).toHaveCount(1);
@@ -417,9 +415,9 @@ try {
     const p = await c.newPage();
     monitor(p);
     await p.goto(url);
-    await expect(p.getByRole("button", { name: /今日特调/ })).toBeVisible();
+    await expect(p.locator(".plaque-title")).toHaveText("吧台还空着");
     await p.locator('input[accept*="audio"]').setInputFiles(files[0]);
-    await expect(p.locator(".status-strip")).toContainText("仅本次可播");
+    await expect(p.locator(".status-toast")).toContainText("仅本次可播");
     await p.getByLabel("播放", { exact: true }).click();
     await expect
       .poll(() => p.locator("audio").evaluate((a) => a.currentTime))
@@ -427,8 +425,10 @@ try {
     await p.waitForTimeout(350);
     await p.reload();
     await expect(p.locator(".drink-row")).toHaveCount(1);
-    await expect(p.locator(".warning-tag").first()).toContainText("需重新导入");
-    await expect(p.locator(".portrait-renderer canvas")).toBeVisible();
+    await expect(p.locator(".drink-tags .warn").first()).toContainText(
+      "需重新导入",
+    );
+    await expect(p.locator(".tavern-canvas")).toBeVisible();
     await c.close();
   }
   const reduced = await browser.newContext({
@@ -452,7 +452,7 @@ try {
   ).toBe(true);
   await rp.locator('input[accept*="audio"]').setInputFiles(files.slice(0, 2));
   await expect(rp.locator(".drink-row")).toHaveCount(2);
-  await rp.locator(".bar-glass").last().tap();
+  await rp.locator(".glass-hotspot").last().tap();
   await expect(rp.getByLabel("暂停", { exact: true })).toBeVisible();
   await rp.getByLabel("暂停", { exact: true }).tap();
   await reduced.close();

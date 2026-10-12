@@ -5,8 +5,8 @@ Start Vite, then run `npm test`. Suites use fresh browser contexts, generated au
 | Command                     | Coverage                                                                                                               |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `npm run build`             | TypeScript and production bundle                                                                                       |
-| `npm run smoke`             | WAV import/play/next, playlist, alias/tags, export, responsive layout                                                  |
-| `npm run test:scene`        | Nonblank canvases, mesh motion, semicircle geometry, arc movement, layering, mobile and reduced motion                 |
+| `npm run smoke`             | WAV import, glass click/play/next, menu sections, notes (alias/tags/glass), reorder, search, JSON round trip, phone layout |
+| `npm run test:scene`        | Lit canvas, ring layout, arc pour with liquid inertia, pour stream, hover card, drag-to-reorder on the bar, quality menu, phone fit, reduced motion (deterministic `?manual` frames) |
 | `npm run test:persistence`  | Entrance gesture/audio, skip/replay, Blob+cover reload, JSON, clear, migration, quota and unavailable-storage fallback |
 | `npm run test:architecture` | Store, sources, PKCE, offline protocol, experiment panels, per-song deletion/reload                                    |
 

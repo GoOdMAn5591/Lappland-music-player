@@ -1,30 +1,17 @@
 import { expect } from "@playwright/test";
-import { launchBrowser } from "./browser.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { launchBrowser } from "./browser.mjs";
 
-const output = path.resolve("test-results");
-const browser = await launchBrowser({
-  headless: true,
-  args: ["--autoplay-policy=no-user-gesture-required"],
-});
-const context = await browser.newContext({
-  viewport: { width: 1440, height: 950 },
-});
-const page = await context.newPage();
-await context.addInitScript(() =>
-  localStorage.setItem("tavern-skip-entrance", "true"),
-);
-const errors = [];
-page.on("pageerror", (error) => errors.push(error.message));
-page.on("console", (message) => {
-  if (message.type() === "error") errors.push(message.text());
-});
+// 3D bar checks. `?manual` stops the render loop so every frame below is
+// produced deterministically with window.__tavern.advance(seconds).
 const appUrl = process.env.APP_URL ?? "http://127.0.0.1:5173/";
+const output = path.resolve("test-results");
+await fs.mkdir(output, { recursive: true });
 
-function wav(frequency) {
+function wav(frequency, seconds = 20) {
   const rate = 16000,
-    count = rate * 30,
+    count = rate * seconds,
     buffer = Buffer.alloc(44 + count * 2);
   buffer.write("RIFF");
   buffer.writeUInt32LE(36 + count * 2, 4);
@@ -38,360 +25,230 @@ function wav(frequency) {
   buffer.writeUInt16LE(16, 34);
   buffer.write("data", 36);
   buffer.writeUInt32LE(count * 2, 40);
-  for (let i = 0; i < count; i++)
+  for (let i = 0; i < count; i++) {
+    const t = i / rate;
+    const kick = Math.sin(2 * Math.PI * 55 * t) * Math.exp(-((t * 2) % 1) * 9);
     buffer.writeInt16LE(
-      Math.round(Math.sin((i / rate) * frequency * Math.PI * 2) * 9000),
+      Math.round(
+        (Math.sin(t * frequency * Math.PI * 2) * 0.3 + kick * 0.6) * 20000,
+      ),
       44 + i * 2,
     );
+  }
   return buffer;
 }
 
-async function canvasPixels(selector = ".portrait-renderer canvas") {
-  const png = await page.locator(selector).screenshot();
-  return page.evaluate(async (base64) => {
-    const image = new Image();
-    image.src = `data:image/png;base64,${base64}`;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = 200;
-    canvas.height = 220;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(image, 0, 0, 200, 220);
-    return Array.from(ctx.getImageData(0, 0, 200, 220).data);
-  }, png.toString("base64"));
-}
+const names = ["午夜低语", "暗红帷幕", "最后一杯", "银色余温", "无序之夜"];
+const files = names.map((name, index) => ({
+  name: `${name}.wav`,
+  mimeType: "audio/wav",
+  buffer: wav(220 + index * 60),
+}));
 
-async function assertCounterPixels(mobile = false) {
-  const pixels = await canvasPixels(".counter-scene canvas");
-  const point = await page.evaluate(async (mobile) => {
-    const { getBarGeometry, arcPoint } = await import(
-      "/src/scene/barGeometry.ts"
-    );
-    const bounds = document
-      .querySelector(".counter-scene")
-      .getBoundingClientRect();
-    const p = arcPoint(
-      getBarGeometry(bounds.width, bounds.height),
-      mobile ? 0.27 : 0.24,
-      0.96,
-    );
-    return { x: p.x / bounds.width, y: p.y / bounds.height };
-  }, mobile);
-  const x = Math.round(point.x * 200);
-  const y = Math.round(point.y * 220);
-  let warm = 0;
-  for (let row = y - 2; row <= y + 2; row++)
-    for (let col = x - 2; col <= x + 2; col++) {
-      const offset = (row * 200 + col) * 4;
-      const [r, g, b] = pixels.slice(offset, offset + 3);
-      if (r > 45 && r > g * 1.06 && g > b * 1.2) warm++;
-    }
-  expect(warm).toBeGreaterThan(10);
-}
+const browser = await launchBrowser({
+  args: ["--autoplay-policy=no-user-gesture-required"],
+});
+const errors = [];
+const advance = (page, seconds, steps) =>
+  page.evaluate(([s, n]) => window.__tavern.advance(s, n), [seconds, steps]);
 
 try {
-  await fs.mkdir(output, { recursive: true });
-  await page.goto(appUrl);
-  await expect(page.locator(".portrait-renderer canvas")).toBeVisible();
-  await expect(page.locator(".portrait-renderer")).toHaveAttribute(
-    "data-fallback",
-    "false",
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
+  await context.addInitScript(() =>
+    localStorage.setItem("tavern-skip-entrance", "true"),
   );
-  await page.waitForTimeout(650);
-  const first = await canvasPixels();
-  const bright = first.filter(
-    (channel, index) => index % 4 === 0 && channel > 130,
-  ).length;
-  expect(bright).toBeGreaterThan(900);
-  await page.mouse.move(820, 370);
-  await page.waitForTimeout(550);
-  const second = await canvasPixels();
-  const changed = second.filter(
-    (channel, index) => index % 4 !== 3 && Math.abs(channel - first[index]) > 7,
-  ).length;
-  expect(changed).toBeGreaterThan(300);
+  const page = await context.newPage();
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(`${appUrl}?manual`);
+  await page.waitForFunction(() => window.__tavern, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__tavern.character, null, {
+    timeout: 30000,
+  });
+  await advance(page, 1);
 
-  const names = ["午夜低语", "暗红帷幕", "最后一杯", "银色余温", "无序之夜"];
-  const audioFiles = [];
-  for (const [index, name] of names.entries()) {
-    const file = path.join(output, `${name}.wav`);
-    await fs.writeFile(file, wav(220 + index * 60));
-    audioFiles.push(file);
+  // The canvas is a lit scene, not a flat fill.
+  const variance = await page.evaluate(async () => {
+    const canvas = document.querySelector(".tavern-canvas");
+    const copy = document.createElement("canvas");
+    copy.width = 160;
+    copy.height = 100;
+    const ctx = copy.getContext("2d");
+    window.__tavern.advance(0.05, 1);
+    ctx.drawImage(canvas, 0, 0, 160, 100);
+    const data = ctx.getImageData(0, 0, 160, 100).data;
+    let sum = 0,
+      sq = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const l = data[i] * 0.3 + data[i + 1] * 0.6 + data[i + 2] * 0.1;
+      sum += l;
+      sq += l * l;
+    }
+    const n = data.length / 4;
+    return Math.sqrt(sq / n - (sum / n) ** 2);
+  });
+  expect(variance).toBeGreaterThan(12);
+
+  // Import five songs: five glasses on the ring, the front one largest and lowest.
+  await page.locator('input[accept*="audio"]').setInputFiles(files);
+  await expect(page.locator(".status-toast")).toContainText("已添加 5 只酒杯", {
+    timeout: 30000,
+  });
+  await advance(page, 1.2);
+  await expect(page.locator(".glass-hotspot")).toHaveCount(5);
+  await advance(page, 2.5);
+  const spots = await page.locator(".glass-hotspot").evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        id: el.dataset.trackId,
+        offset: Number(el.dataset.offset),
+        x: r.x + r.width / 2,
+        bottom: r.bottom,
+        width: r.width,
+      };
+    }),
+  );
+  const byOffset = Object.fromEntries(spots.map((s) => [s.offset, s]));
+  expect(Math.abs(byOffset[0].x - 720)).toBeLessThan(40);
+  expect(byOffset[-2].bottom).toBeLessThan(byOffset[-1].bottom);
+  expect(byOffset[-1].bottom).toBeLessThan(byOffset[0].bottom);
+  expect(byOffset[2].bottom).toBeLessThan(byOffset[1].bottom);
+  expect(byOffset[0].width).toBeGreaterThan(byOffset[2].width);
+
+  // Every glass sits on the counter ring and the current one is in the spotlight.
+  const ring = await page.evaluate(() => {
+    const glasses = [...window.__tavern.carousel.glasses.values()];
+    return glasses.map((g) => Math.hypot(g.root.position.x, g.root.position.z));
+  });
+  for (const r of ring) expect(Math.abs(r - 2.43)).toBeLessThan(0.01);
+
+  // Next: the right glass slides to the front along the arc, its drink sloshing.
+  const incoming = byOffset[1].id;
+  await page.getByLabel("下一首", { exact: true }).click();
+  await expect(
+    page.locator(`.glass-hotspot[data-track-id="${incoming}"]`),
+  ).toHaveClass(/is-current/);
+  // pause straight away: software-rendered frames are slow and the song must not end mid-test
+  await page.getByLabel("暂停", { exact: true }).click();
+  const path3d = [];
+  let maxTilt = 0;
+  for (let i = 0; i < 8; i++) {
+    const sample = await page.evaluate((id) => {
+      window.__tavern.advance(0.08, 3);
+      const g = window.__tavern.carousel.glasses.get(id);
+      return {
+        x: g.root.position.x,
+        z: g.root.position.z,
+        tilt: Math.hypot(g.tilt.x, g.tilt.y),
+      };
+    }, incoming);
+    path3d.push(sample);
+    maxTilt = Math.max(maxTilt, sample.tilt);
   }
-  await page.locator('input[accept*="audio"]').setInputFiles(audioFiles);
-  await expect(page.locator(".bar-glass")).toHaveCount(5);
+  for (const p of path3d)
+    expect(Math.abs(Math.hypot(p.x, p.z) - 2.43)).toBeLessThan(0.01);
+  expect(path3d[0].x).toBeGreaterThan(path3d[path3d.length - 1].x);
+  expect(maxTilt).toBeGreaterThan(0.02);
+  await advance(page, 2);
+  const settled = await page.evaluate(
+    (id) => window.__tavern.carousel.glasses.get(id).root.position.x,
+    incoming,
+  );
+  expect(Math.abs(settled)).toBeLessThan(0.02);
+
+  // Playing pours the current drink colour from Lappland's bottle.
   await page.getByLabel("播放", { exact: true }).click();
   await expect
     .poll(() =>
       page.locator("audio").evaluate((el) => !el.paused && el.currentTime > 0),
     )
     .toBe(true);
-  await page.getByLabel("暂停", { exact: true }).click();
-  await page.waitForTimeout(800);
-
-  const oldId = await page
-    .locator(".bar-glass.is-current")
-    .getAttribute("data-track-id");
-  const right = page.locator('.bar-glass[data-slot="1"]');
-  const rightId = await right.getAttribute("data-track-id");
-  const before = await right.boundingBox();
-  const beforeArc = await right.evaluate((el) => ({
-    x: Number(el.dataset.arcX),
-    y: Number(el.dataset.arcY),
-  }));
-  await page.getByLabel("下一首", { exact: true }).click();
-  const incoming = page.locator(`.bar-glass[data-track-id="${rightId}"]`);
-  await expect(incoming).toHaveClass(/is-current/);
-  await page.waitForTimeout(140);
-  const during = await incoming.boundingBox();
-  const inertia = await page
-    .locator(".liquid-inertia")
-    .evaluateAll((nodes) =>
-      nodes.some((node) => node.getAnimations().length > 0),
-    );
-  expect(inertia).toBe(true);
-  await page.waitForTimeout(250);
-  const midwayArc = await incoming.evaluate((el) => ({
-    x: Number(el.dataset.arcX),
-    y: Number(el.dataset.arcY),
-  }));
   await page.waitForTimeout(600);
-  const after = await incoming.boundingBox();
-  const afterArc = await incoming.evaluate((el) => ({
-    x: Number(el.dataset.arcX),
-    y: Number(el.dataset.arcY),
-  }));
-  const fraction = (midwayArc.x - beforeArc.x) / (afterArc.x - beforeArc.x);
-  const chordY = beforeArc.y + (afterArc.y - beforeArc.y) * fraction;
-  expect(midwayArc.y - chordY).toBeGreaterThan(1.5);
-  expect(before.x).toBeGreaterThan(during.x);
-  expect(during.x).toBeGreaterThan(after.x);
-  await expect(
-    page.locator(`.bar-glass[data-track-id="${oldId}"]`),
-  ).toHaveAttribute("data-slot", "-1");
+  await advance(page, 1.5);
+  expect(
+    await page.evaluate(() => window.__tavern.character.pour),
+  ).toBeGreaterThan(0.7);
   await page.getByLabel("暂停", { exact: true }).click();
 
-  // Loop across both playlist boundaries while preserving the incoming glass.
-  await page.getByLabel("切换播放模式").click();
-  await page.getByLabel("切换播放模式").click();
-  for (let i = 0; i < 4; i++) {
-    await page.getByLabel("下一首", { exact: true }).click();
-    await page.waitForTimeout(80);
-  }
-  await expect(page.locator(".bar-glass.is-current")).toHaveAttribute(
-    "data-track-id",
-    oldId,
-  );
-  await page.getByLabel("上一首", { exact: true }).click();
-  await expect(page.locator(".bill-card h2")).toHaveText(names[4]);
-  await page.getByLabel("暂停", { exact: true }).click();
-
-  await page.getByLabel("角色构图与动画", { exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByLabel("角色动作幅度", { exact: true }).press("Home");
-  for (let i = 0; i < 8; i++)
-    await page.getByLabel("角色动作幅度", { exact: true }).press("ArrowRight");
-  await page.getByLabel("关闭角色设置").click();
-  await page.waitForTimeout(500);
-  // Simulate the previous release's rig, preserving the user's motion setting.
-  await page.evaluate(
-    () =>
-      new Promise((resolve, reject) => {
-        const request = indexedDB.open("tavern-character", 1);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          const db = request.result;
-          const tx = db.transaction("portrait", "readwrite");
-          const store = tx.objectStore("portrait");
-          const read = store.get("lappland");
-          read.onsuccess = () => {
-            const asset = read.result;
-            asset.rig.version = 1;
-            asset.rig.zoom = 1.06;
-            asset.rig.x = -6;
-            asset.rig.y = 3;
-            asset.rig.anchors = Object.fromEntries(
-              Object.entries(asset.rig.anchors).filter(([key]) =>
-                [
-                  "head",
-                  "leftHair",
-                  "rightHair",
-                  "leftEye",
-                  "rightEye",
-                ].includes(key),
-              ),
-            );
-            store.put(asset, "lappland");
-          };
-          tx.oncomplete = () => {
-            db.close();
-            resolve();
-          };
-          tx.onerror = () => {
-            db.close();
-            reject(tx.error);
-          };
-        };
-      }),
-  );
-  await page.reload();
-  await expect(page.locator(".portrait-renderer canvas")).toBeVisible();
-  await page.getByLabel("角色构图与动画", { exact: true }).click();
-  await expect(page.getByLabel("角色动作幅度", { exact: true })).toHaveValue(
-    "0.4",
-  );
-  await expect(page.getByLabel("角色缩放", { exact: true })).toHaveValue(
-    "1.02",
-  );
-  await page.getByLabel("重置角色构图").click();
-  await page.getByLabel("关闭角色设置").click();
-  await expect(page.locator(".drink-row")).toHaveCount(5);
-  await expect(page.locator(".status-strip")).toContainText("酒窖已恢复 5 首");
-  await page.waitForTimeout(900);
-  await page.mouse.move(15, 10);
+  // Hovering a glass shows its drink card.
+  const current = page.locator(".glass-hotspot.is-current");
+  await current.hover();
+  await advance(page, 0.3);
+  await expect(page.locator(".glass-tooltip")).toHaveClass(/is-visible/);
+  await expect(page.locator(".glass-tooltip strong")).toHaveText(names[1]);
   await page.screenshot({ path: path.join(output, "scene-desktop.png") });
-  await expect(page.locator(".shelf-bottle")).toHaveCount(72);
-  await expect(page.locator(".hanging-glass")).toHaveCount(20);
-  await expect(page.locator(".counter-scene canvas")).toBeVisible();
-  await assertCounterPixels();
 
-  const waistVisible = async () =>
-    page.evaluate(async () => {
-      const stage = document
-        .querySelector(".center-stage")
-        .getBoundingClientRect();
-      const portrait = document
-        .querySelector(".portrait-renderer")
-        .getBoundingClientRect();
-      const { getBarGeometry, arcPoint } = await import(
-        "/src/scene/barGeometry.ts"
-      );
-      const bar = getBarGeometry(stage.width, stage.height);
-      const imageScale =
-        Math.min(portrait.width / 910, portrait.height / 1200) * 1.02 * 0.96;
-      const x =
-        portrait.x +
-        (portrait.width - imageScale * 910) / 2 -
-        portrait.width * 0.08 +
-        imageScale * 910 * 0.65 -
-        stage.x;
-      const y =
-        portrait.y +
-        (portrait.height - imageScale * 1200) / 2 -
-        portrait.height * 0.02 +
-        imageScale * 1200 * 0.89 -
-        stage.y;
-      const edge = arcPoint(
-        bar,
-        Math.asin((x - bar.cx) / (bar.rx * bar.inner)),
-        bar.inner,
-      );
-      return y < edge.y - 6;
-    });
-  expect(await waistVisible()).toBe(true);
+  // Drag a glass along the bar to a new place in the menu.
+  // after "next" the first song sits left of the front glass; drop it two places to the right
+  const from = await page
+    .locator('.glass-hotspot[data-offset="-1"]')
+    .boundingBox();
+  const to = await page
+    .locator('.glass-hotspot[data-offset="2"]')
+    .boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(
+      from.x + ((to.x - from.x) * i) / 6 + from.width / 2,
+      from.y + ((to.y - from.y) * i) / 6 + from.height / 2,
+    );
+    await advance(page, 0.05, 1);
+  }
+  await page.mouse.up();
+  await advance(page, 1.5);
+  await page.getByLabel("打开酒单", { exact: true }).click();
+  const order = await page
+    .locator(".drink-row .drink-line strong")
+    .allTextContents();
+  expect(order.indexOf(names[0])).toBeGreaterThan(order.indexOf(names[2]));
+  await page.getByLabel("关闭酒单", { exact: true }).click();
 
-  // Hover feedback does not resize or rearrange the menu or controls.
-  const cup = page.locator(".bar-glass.is-current");
-  await cup.hover();
-  await expect(cup.locator(".glass-tooltip")).toHaveCSS("opacity", "1");
-  await page.mouse.move(10, 10);
+  // Quality can be pinned from the overflow menu.
+  await page.getByRole("button", { name: "更多选项", exact: true }).click();
+  await page.locator(".quality-row button", { hasText: "低" }).click();
+  expect(await page.evaluate(() => window.__tavern.quality)).toBe("low");
+  await page.locator(".quality-row button", { hasText: "自动" }).click();
+  expect(await page.evaluate(() => window.__tavern.quality)).toBe("high");
+  await page.keyboard.press("Escape");
+
+  // Phone layout: hero glass, plaque and transport all fit.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(900);
-  await page.screenshot({
-    path: path.join(output, "scene-mobile.png"),
-    fullPage: true,
-  });
-  const overflow = await page.evaluate(() => ({
-    width: innerWidth,
-    scroll: document.documentElement.scrollWidth,
-    elements: [...document.querySelectorAll("body *")]
-      .filter(
-        (el) =>
-          el.getBoundingClientRect().right > innerWidth + 1 &&
-          getComputedStyle(el).position !== "absolute",
-      )
-      .map((el) => ({
-        tag: el.tagName,
-        cls: el.className,
-        right: el.getBoundingClientRect().right,
-      })),
-  }));
-  if (overflow.scroll > overflow.width)
-    console.log("Overflow:", JSON.stringify(overflow));
-  expect(overflow.scroll <= overflow.width).toBe(true);
-  const mobileCup = await cup.boundingBox();
-  const controls = await page.locator(".stage-controls").boundingBox();
-  expect(mobileCup.y + mobileCup.height).toBeLessThan(controls.y);
+  await page.waitForTimeout(400);
+  await advance(page, 1);
   await expect(page.getByLabel("播放", { exact: true })).toBeInViewport();
-  await page.screenshot({
-    path: path.join(output, "scene-mobile.png"),
-    fullPage: true,
-  });
-  const mobilePixels = await canvasPixels();
-  await assertCounterPixels(true);
-  expect(await waistVisible()).toBe(true);
-  expect(
-    mobilePixels.filter((c, i) => i % 4 === 0 && c > 130).length,
-  ).toBeGreaterThan(700);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.waitForTimeout(300);
-  expect(
-    await page
-      .locator(".drink-liquid")
-      .first()
-      .evaluate((el) => getComputedStyle(el).animationName),
-  ).toBe("none");
-
-  await page.setViewportSize({ width: 1024, height: 768 });
-  await page.waitForTimeout(200);
-  await page.screenshot({
-    path: path.join(output, "scene-tablet.png"),
-    fullPage: true,
-  });
+  await expect(page.locator(".plaque-title")).toBeInViewport();
+  await expect(page.locator(".glass-hotspot.is-current")).toBeInViewport();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  const tabletControls = await page.locator(".stage-controls").boundingBox();
-  const tabletMenu = await page.locator(".menu-page").boundingBox();
-  expect(tabletControls.x + tabletControls.width).toBeLessThan(tabletMenu.x);
-  for (const width of [320, 768, 1920]) {
-    await page.setViewportSize({ width, height: 900 });
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
-    await expect(page.getByLabel("下一首", { exact: true })).toBeInViewport();
-  }
+  await page.screenshot({ path: path.join(output, "scene-mobile.png") });
+  await context.close();
 
-  const fallbackPage = await context.newPage();
-  await fallbackPage.addInitScript(() => {
-    const getContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
-      if (type.startsWith("webgl")) return null;
-      return getContext.call(this, type, ...args);
-    };
+  // Reduced motion keeps the scene still but working.
+  const calm = await browser.newContext({
+    viewport: { width: 1200, height: 800 },
+    reducedMotion: "reduce",
   });
-  await fallbackPage.goto(appUrl);
-  await expect(fallbackPage.locator(".portrait-renderer")).toHaveAttribute(
-    "data-fallback",
-    "true",
+  await calm.addInitScript(() =>
+    localStorage.setItem("tavern-skip-entrance", "true"),
   );
-  await expect(fallbackPage.locator(".portrait-fallback")).toBeVisible();
-  expect(
-    await fallbackPage
-      .locator(".portrait-fallback")
-      .evaluate((img) => img.naturalWidth),
-  ).toBe(910);
-  await fallbackPage.screenshot({
-    path: path.join(output, "scene-fallback.png"),
+  const calmPage = await calm.newPage();
+  calmPage.on("pageerror", (error) => errors.push(error.message));
+  await calmPage.goto(`${appUrl}?manual`);
+  await calmPage.waitForFunction(() => window.__tavern, null, {
+    timeout: 30000,
   });
-  await fallbackPage.close();
+  expect(await calmPage.evaluate(() => window.__tavern.reduced)).toBe(true);
+  await calm.close();
+
   expect(errors).toEqual([]);
   console.log(
-    `Scene checks passed: supplied PNG, nonblank canvas (${bright} bright pixels), animation (${changed} changed channels), curved orbit (${(midwayArc.y - chordY).toFixed(2)}px away from a straight chord), waist clearance, 72 bottles, glass inertia, boundary loops, saved rig, persisted audio, hover, mobile framing and reduced motion.`,
+    "Scene passed: lit canvas, ring layout, arc pour with liquid inertia, pour stream, hover card, drag reorder, quality menu, phone fit, reduced motion.",
   );
 } finally {
   await browser.close();

@@ -21,6 +21,32 @@ export const isSupportedAudio = (file: File) =>
 
 export const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
+/**
+ * Let the browser read the file header before it goes on the bar.
+ * Resolves to the duration in seconds, 0 if unknown, or -1 if this browser
+ * cannot decode the file at all (corrupt, or an unsupported codec).
+ */
+export const probeAudio = (url: string) =>
+  new Promise<number>((resolve) => {
+    const audio = new Audio();
+    let done = false;
+    const finish = (value: number) => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      audio.onloadedmetadata = audio.onerror = null;
+      audio.removeAttribute("src");
+      audio.load();
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => finish(0), 8000);
+    audio.preload = "metadata";
+    audio.onloadedmetadata = () =>
+      finish(Number.isFinite(audio.duration) ? audio.duration : 0);
+    audio.onerror = () => finish(-1);
+    audio.src = url;
+  });
+
 export const buildTags = (
   file: File,
   artist: string,

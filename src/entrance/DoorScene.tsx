@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Object3D, Material } from "three";
+import { t } from "../i18n";
 
 export function DoorScene({ opening }: { opening: boolean }) {
   const host = useRef<HTMLDivElement>(null);
@@ -17,11 +18,11 @@ export function DoorScene({ opening }: { opening: boolean }) {
       const renderer = new T.WebGLRenderer({ alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
       renderer.setClearColor(0x000000, 0);
-      renderer.domElement.setAttribute("aria-label", "酒馆木门场景");
+      renderer.domElement.setAttribute("aria-label", t("酒馆木门场景"));
       host.current.append(renderer.domElement);
       const scene = new T.Scene();
       const camera = new T.PerspectiveCamera(42, 1, 0.1, 80);
-      const ambient = new T.HemisphereLight(0xbbc4bb, 0x1a0914, 1.5);
+      const ambient = new T.HemisphereLight(0xffdcb4, 0x1a0809, 1.4);
       scene.add(ambient);
       const lamp = new T.PointLight(0xffd18a, 45, 22, 2);
       lamp.position.set(0, 4.1, 3.4);
@@ -63,7 +64,7 @@ export function DoorScene({ opening }: { opening: boolean }) {
       const wood = new T.MeshStandardMaterial({ map: texture, roughness: 0.7 });
       const inset = new T.MeshStandardMaterial({
         map: texture,
-        color: 0x777e75,
+        color: 0x8a6a55,
         roughness: 0.82,
       });
       const brass = new T.MeshStandardMaterial({
@@ -72,12 +73,12 @@ export function DoorScene({ opening }: { opening: boolean }) {
         roughness: 0.3,
       });
       const trim = new T.MeshStandardMaterial({
-        color: 0x49473a,
+        color: 0x5a3f24,
         metalness: 0.6,
         roughness: 0.5,
       });
       const wall = new T.MeshStandardMaterial({
-        color: 0x162320,
+        color: 0x1c0d0b,
         roughness: 1,
       });
       const box = (

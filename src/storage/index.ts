@@ -17,22 +17,50 @@ export interface TavernTrack {
   album: string;
   duration: number;
   tags: string[];
+  /** Optional glass silhouette chosen in the drink editor (see app/recipes.ts). */
+  glass?: string;
+  /** Optional palette key chosen in the drink editor (see app/recipes.ts). */
+  tint?: string;
+  /** Glass-look seed for a track mirrored from a 同席 host (not persisted). */
+  look?: number;
   addedAt: number;
+  /**
+   * Where the sound comes from: local audio unless "spotify". A Spotify track
+   * is played by each listener's own Spotify account and never stored,
+   * downloaded or relayed — the tavern only knows its URI and metadata.
+   */
+  source?: "spotify";
+  /** spotify:track:… */
+  spotifyUri?: string;
+  /** The track on open.spotify.com (Spotify asks for a link back). */
+  spotifyUrl?: string;
   status: TrackStatus;
   stored?: boolean;
   objectUrl?: string;
   coverUrl?: string;
 }
 
+/** A menu page that mirrors one of the user's Spotify playlists. */
+export interface SpotifyLink {
+  /** Spotify playlist ID, or "liked" for the user's saved songs. */
+  id: string;
+  url: string;
+  owner?: string;
+}
+
 export interface TavernPlaylist {
   id: string;
   name: string;
   mood: string;
+  /** For a Spotify page these are filled in from Spotify each session, never saved. */
   trackIds: string[];
+  spotify?: SpotifyLink;
 }
 
-export interface PersistedTrack
-  extends Omit<TavernTrack, "objectUrl" | "coverUrl" | "status" | "stored"> {}
+export interface PersistedTrack extends Omit<
+  TavernTrack,
+  "objectUrl" | "coverUrl" | "status" | "stored"
+> {}
 
 export interface TavernLibrary {
   version: 1;
@@ -136,7 +164,8 @@ export async function loadLibrary(): Promise<TavernLibrary> {
   }
 }
 
-export async function saveLibrary(library: TavernLibrary): Promise<void> {
+export async function saveLibrary(input: TavernLibrary): Promise<void> {
+  const library = { ...input, playlists: persistablePlaylists(input.playlists) };
   try {
     const db = await database();
     await db.put(STORE, library, STATE_KEY);
@@ -148,6 +177,36 @@ export async function saveLibrary(library: TavernLibrary): Promise<void> {
   } catch {
     localStorage.setItem(FALLBACK_KEY, JSON.stringify(library));
   }
+}
+
+export const isSpotifyTrack = (track?: Pick<TavernTrack, "source">) =>
+  track?.source === "spotify";
+
+/**
+ * What goes into IndexedDB / the exported JSON: local tracks, and Spotify
+ * pages as links only (their songs are fetched again from Spotify).
+ */
+export function persistablePlaylists(playlists: TavernPlaylist[]): TavernPlaylist[] {
+  return playlists.map((playlist) =>
+    playlist.spotify ? { ...playlist, trackIds: [] } : playlist,
+  );
+}
+
+const SPOTIFY_PLAYLIST_ID = /^([A-Za-z0-9]{22}|liked)$/;
+function cleanSpotifyLink(value: unknown): SpotifyLink | undefined {
+  const link = value as SpotifyLink | undefined;
+  if (!link || typeof link.id !== "string" || !SPOTIFY_PLAYLIST_ID.test(link.id)) return;
+  const url =
+    typeof link.url === "string" && /^https:\/\/open\.spotify\.com\//.test(link.url)
+      ? link.url
+      : link.id === "liked"
+        ? "https://open.spotify.com/collection/tracks"
+        : `https://open.spotify.com/playlist/${link.id}`;
+  return {
+    id: link.id,
+    url,
+    ...(typeof link.owner === "string" ? { owner: link.owner.slice(0, 80) } : {}),
+  };
 }
 
 export function toPersistedTrack(track: TavernTrack): PersistedTrack {
@@ -167,7 +226,8 @@ export function parseLibraryConfig(text: string): TavernLibrary {
     throw new Error("Invalid menu");
   const ids = new Set<string>();
   const fingerprints = new Set<string>();
-  const tracks = value.tracks.map((track) => {
+  // Spotify songs are never saved; an old or hand-edited file may still carry some
+  const tracks = value.tracks.filter((track) => track?.source !== "spotify").map((track) => {
     if (
       !track ||
       [track.id, track.fingerprint, track.fileName, track.title].some(
@@ -200,6 +260,12 @@ export function parseLibraryConfig(text: string): TavernLibrary {
       duration: number(track.duration),
       addedAt: number(track.addedAt),
       tags: track.tags,
+      ...(typeof track.glass === "string" && track.glass
+        ? { glass: track.glass }
+        : {}),
+      ...(typeof track.tint === "string" && track.tint
+        ? { tint: track.tint }
+        : {}),
     };
   });
   const playlistIds = new Set<string>();
@@ -213,11 +279,13 @@ export function parseLibraryConfig(text: string): TavernLibrary {
     )
       throw new Error("Invalid playlist");
     playlistIds.add(playlist.id);
+    const spotify = cleanSpotifyLink(playlist.spotify);
     return {
       id: playlist.id,
       name: playlist.name,
       mood: typeof playlist.mood === "string" ? playlist.mood : "",
-      trackIds: [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
+      trackIds: spotify ? [] : [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
+      ...(spotify ? { spotify } : {}),
     };
   });
   if (!playlists.length) playlists.push(...createDefaultLibrary().playlists);
@@ -229,7 +297,8 @@ export function parseLibraryConfig(text: string): TavernLibrary {
       ? value.selectedPlaylistId
       : playlists[0].id,
     currentTrackId:
-      value.currentTrackId && ids.has(value.currentTrackId)
+      value.currentTrackId &&
+      (ids.has(value.currentTrackId) || /^spotify-[A-Za-z0-9]{22}$/.test(value.currentTrackId))
         ? value.currentTrackId
         : undefined,
     playbackMode: ["sequence", "shuffle", "repeat-one", "repeat-all"].includes(
@@ -344,8 +413,9 @@ export async function clearLibrary(): Promise<void> {
 
 export async function deleteStoredTrack(
   fingerprint: string,
-  library: TavernLibrary,
+  input: TavernLibrary,
 ): Promise<void> {
+  const library = { ...input, playlists: persistablePlaylists(input.playlists) };
   const db = await database();
   const tx = db.transaction(["audio", STORE], "readwrite");
   await tx.objectStore("audio").delete(fingerprint);

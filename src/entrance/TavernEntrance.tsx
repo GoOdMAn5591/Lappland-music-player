@@ -1,6 +1,7 @@
 import { DoorOpen, SkipForward } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { DoorScene } from "./DoorScene";
+import { t } from "../i18n";
 
 export type EntrancePhase = "closed" | "opening" | "entered";
 const PREFERENCE = "tavern-skip-entrance";
@@ -127,7 +128,7 @@ export function TavernEntrance({
       <div className="entrance-spill" aria-hidden="true" />
       <header className="door-inscription">
         <span>NOCTURNE · EST. 00:00</span>
-        <h1 id="entrance-title">无序酒馆</h1>
+        <h1 id="entrance-title">{t("无序酒馆")}</h1>
         <p>LAPPLAND / AFTER HOURS</p>
       </header>
       <div className="entrance-actions">
@@ -139,7 +140,7 @@ export function TavernEntrance({
         >
           <DoorOpen size={19} />
           <span>
-            {!ready ? "酒窖苏醒中" : opening ? "欢迎光临" : "进入酒馆"}
+            {!ready ? t("酒窖苏醒中") : opening ? t("欢迎光临") : t("进入酒馆")}
           </span>
         </button>
         <label className="remember-entrance">
@@ -149,12 +150,12 @@ export function TavernEntrance({
             disabled={opening}
             onChange={(event) => setRemember(event.target.checked)}
           />
-          <span>下次直接进入</span>
+          <span>{t("下次直接进入")}</span>
         </label>
       </div>
       <button className="skip-entrance" onClick={skip}>
         <SkipForward size={15} />
-        跳过入场动画
+        {t("跳过入场动画")}
       </button>
       <span className="entrance-edition" aria-hidden="true">
         THE PRIVATE CELLAR / I

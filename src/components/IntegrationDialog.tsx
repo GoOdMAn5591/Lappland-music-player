@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { t } from "../i18n";
 
 export function IntegrationDialog({
   title,
@@ -34,7 +35,7 @@ export function IntegrationDialog({
         <button
           className="icon-button"
           onClick={onClose}
-          aria-label={`关闭${title}`}
+          aria-label={t("关闭{title}", { title })}
         >
           <X size={19} />
         </button>

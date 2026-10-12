@@ -1,8 +1,14 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { usePowerSaver } from "../power";
+
+/**
+ * Owns the local Web Audio graph: <audio> -> analyser -> gain -> speakers.
+ * The 3D bar reads the analyser directly every frame; only a coarse
+ * `--audio-pulse` CSS variable is published for the HUD.
+ */
 export function useLocalVisualizer(isPlaying: boolean) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const appRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext>();
   const sourceRef = useRef<MediaElementAudioSourceNode>();
   const analyserRef = useRef<AnalyserNode>();
@@ -20,63 +26,52 @@ export function useLocalVisualizer(isPlaying: boolean) {
       audioContextRef.current = new AudioCtor();
     }
     if (!sourceRef.current) {
-      analyserRef.current = audioContextRef.current.createAnalyser();
-      analyserRef.current.fftSize = 128;
-      sourceRef.current =
-        audioContextRef.current.createMediaElementSource(audio);
+      const context = audioContextRef.current;
+      analyserRef.current = context.createAnalyser();
+      analyserRef.current.fftSize = 1024;
+      analyserRef.current.smoothingTimeConstant = 0.72;
+      sourceRef.current = context.createMediaElementSource(audio);
       sourceRef.current.connect(analyserRef.current);
-      gainRef.current = audioContextRef.current.createGain();
+      gainRef.current = context.createGain();
       analyserRef.current.connect(gainRef.current);
-      gainRef.current.connect(audioContextRef.current.destination);
+      gainRef.current.connect(context.destination);
     }
     if (audioContextRef.current.state === "suspended") {
       void audioContextRef.current.resume();
     }
   }, []);
-  const drawVisualizer = useCallback(() => {
+  const publishPulse = useCallback(() => {
     const analyser = analyserRef.current;
-    const canvas = canvasRef.current;
-    if (!analyser || !canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
+    if (!analyser) return;
     const buffer = new Uint8Array(analyser.frequencyBinCount);
-    const render = () => {
-      analyser.getByteFrequencyData(buffer);
-      const width = canvas.width;
-      const height = canvas.height;
-      const average =
-        buffer.reduce((sum, value) => sum + value, 0) / buffer.length / 255;
-      appRef.current?.style.setProperty("--audio-pulse", average.toFixed(3));
-      context.clearRect(0, 0, width, height);
-      const gradient = context.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0, "rgba(247, 210, 123, 0.08)");
-      gradient.addColorStop(0.5, "rgba(147, 23, 43, 0.42)");
-      gradient.addColorStop(1, "rgba(255, 226, 161, 0.12)");
-      context.fillStyle = gradient;
-      const barWidth = width / buffer.length;
-      buffer.forEach((value, index) => {
-        const barHeight = Math.max(2, (value / 255) * height * 0.86);
-        context.fillRect(
-          index * barWidth,
-          height - barHeight,
-          Math.max(2, barWidth - 2),
-          barHeight,
-        );
-      });
+    let last = 0;
+    const render = (now: number) => {
       animationRef.current = requestAnimationFrame(render);
+      if (now - last < 66) return;
+      last = now;
+      analyser.getByteFrequencyData(buffer);
+      let sum = 0;
+      for (let i = 0; i < 48; i++) sum += buffer[i];
+      appRef.current?.style.setProperty(
+        "--audio-pulse",
+        (sum / 48 / 255).toFixed(3),
+      );
     };
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    render();
+    animationRef.current = requestAnimationFrame(render);
   }, []);
+  // performance mode: no per-frame analysis for the HUD glow
+  const powerSaver = usePowerSaver();
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && !powerSaver) {
       ensureAudioGraph();
-      drawVisualizer();
+      publishPulse();
     } else {
+      if (isPlaying) ensureAudioGraph();
       appRef.current?.style.setProperty("--audio-pulse", "0");
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     }
-  }, [drawVisualizer, ensureAudioGraph, isPlaying]);
+  }, [publishPulse, ensureAudioGraph, isPlaying, powerSaver]);
   useEffect(
     () => () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -87,7 +82,7 @@ export function useLocalVisualizer(isPlaying: boolean) {
   return {
     audioRef,
     appRef,
-    canvasRef,
+    analyserRef,
     audioContextRef,
     gainRef,
     ensureAudioGraph,

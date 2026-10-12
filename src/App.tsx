@@ -1,64 +1,82 @@
-import { Database, Wine } from "lucide-react";
-import {
-  LocalCellarManager,
-  formatBytes,
-} from "./components/LocalCellarManager";
+import { Wine } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { useTavernController } from "./app/useTavernController";
 import { CharacterSettings } from "./character/CharacterSettings";
-import { FloatingToolbar } from "./components/FloatingToolbar";
-import { PlaylistMenu } from "./components/PlaylistMenu";
-import { TavernStage } from "./components/TavernStage";
-import { TrackEditor } from "./components/TrackEditor";
-import { TrackMenu } from "./components/TrackMenu";
-import { TavernEntrance } from "./entrance/TavernEntrance";
-import { SpotifyPanel } from "./components/SpotifyPanel";
+import { BarScene } from "./components/BarScene";
+import { LocalCellarManager } from "./components/LocalCellarManager";
 import { MultiplayerPanel } from "./components/MultiplayerPanel";
+import { RoomJoin } from "./components/RoomJoin";
+import { SpotifyPanel } from "./components/SpotifyPanel";
+import { Hud } from "./components/hud/Hud";
+import { MenuDrawer } from "./components/hud/MenuDrawer";
+import { createFrameBus } from "./components/hud/frameBus";
+import { TavernEntrance } from "./entrance/TavernEntrance";
+import type { Quality } from "./scene3d/post";
+import { t, useLang } from "./i18n";
+import { usePowerSaver } from "./power";
+
+const QUALITY_KEY = "tavern-quality";
+function storedQuality(): Quality | "auto" {
+  try {
+    const value = localStorage.getItem(QUALITY_KEY);
+    return value === "high" || value === "medium" || value === "low"
+      ? value
+      : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
 export default function App() {
+  useLang(); // re-render everything when the language changes
+  const powerSaver = usePowerSaver();
   const model = useTavernController();
   const {
-    tracks,
-    currentTrackId,
     setIsPlaying,
     setProgress,
-    duration,
     setDuration,
-    statusLine,
     setStatusLine,
     isDragActive,
     setIsDragActive,
     loaded,
-    transitionDirection,
     characterSettingsOpen,
     setCharacterSettingsOpen,
     librarySettingsOpen,
     setLibrarySettingsOpen,
-    libraryBytes,
     libraryBusy,
     entrancePhase,
     setEntrancePhase,
     portrait,
-    pointerRef,
-    portraitInputRef,
     audioRef,
     fileInputRef,
     configInputRef,
-    live2dInputRef,
     appRef,
     currentTrack,
-    readyTracks,
-    carouselTrackIds,
     updateTrack,
     finishEntrance,
     openEntrance,
     emptyCellar,
     importFiles,
-    importLive2dFolder,
     handleEnded,
     handleDrop,
     exportConfig,
     importConfig,
     handlePointerMove,
   } = model;
+  const bus = useMemo(createFrameBus, []);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [scene, setScene] = useState<"loading" | "ready" | "failed">("loading");
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const [quality, setQuality] = useState<Quality | "auto">(storedQuality);
+  const chooseQuality = useCallback((value: Quality | "auto") => {
+    setQuality(value);
+    try {
+      localStorage.setItem(QUALITY_KEY, value);
+    } catch {
+      /* preference only lasts this session */
+    }
+  }, []);
+
   return (
     <>
       {entrancePhase !== "entered" && (
@@ -72,39 +90,28 @@ export default function App() {
       <div
         ref={appRef}
         data-entry={entrancePhase}
-        className={`tavern-shell motion-${transitionDirection} ${isDragActive ? "is-dragging-files" : ""}`}
+        data-scene={scene}
+        data-power={powerSaver ? "saver" : undefined}
+        className={`tavern-app ${isDragActive ? "is-dragging-files" : ""} ${menuOpen ? "menu-is-open" : ""}`}
         onDrop={handleDrop}
         onDragOver={(event) => {
           event.preventDefault();
-          if (event.dataTransfer.types.includes("Files")) setIsDragActive(true);
+          if (event.dataTransfer.types.includes("Files") && !model.isGuest)
+            setIsDragActive(true);
         }}
-        onDragLeave={() => setIsDragActive(false)}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target || !event.relatedTarget)
+            setIsDragActive(false);
+        }}
         onPointerMove={handlePointerMove}
-        onPointerLeave={() => {
-          pointerRef.current = { x: 0, y: 0 };
-          appRef.current?.style.setProperty("--tilt-x", "0");
-          appRef.current?.style.setProperty("--tilt-y", "0");
-        }}
       >
-        <input
-          ref={portraitInputRef}
-          className="visually-hidden"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          aria-label="拉普兰德角色图片"
-          onChange={(event) => {
-            void portrait.importImage(event.target.files?.[0]).then((ok) => {
-              if (ok) setCharacterSettingsOpen(true);
-            });
-            event.currentTarget.value = "";
-          }}
-        />
         <input
           ref={fileInputRef}
           className="visually-hidden"
           type="file"
           accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac"
           multiple
+          aria-label={t("添加本地音频")}
           onChange={(event) => {
             if (event.target.files) void importFiles(event.target.files);
             event.currentTarget.value = "";
@@ -115,35 +122,62 @@ export default function App() {
           className="visually-hidden"
           type="file"
           accept="application/json,.json"
+          aria-label={t("导入菜单 JSON")}
           onChange={(event) => {
             void importConfig(event.target.files?.[0]);
             event.currentTarget.value = "";
           }}
         />
-        <input
-          ref={live2dInputRef}
-          className="visually-hidden"
-          type="file"
-          accept=".json,.model3.json,.moc3,.motion3.json,.physics3.json,.png,.jpg,.jpeg"
-          multiple
-          {...{ webkitdirectory: "", directory: "" }}
-          onChange={(event) => {
-            importLive2dFolder(event.target.files);
-            event.currentTarget.value = "";
+        <audio
+          ref={audioRef}
+          onError={model.handleAudioError}
+          onEnded={handleEnded}
+          onLoadedMetadata={(event) => {
+            const audio = event.currentTarget;
+            setDuration(audio.duration || currentTrack?.duration || 0);
+            if (currentTrack && audio.duration && !currentTrack.duration)
+              updateTrack(currentTrack.id, { duration: audio.duration });
           }}
+          onTimeUpdate={(event) =>
+            setProgress(event.currentTarget.currentTime || 0)
+          }
         />
-        {characterSettingsOpen && portrait.asset && portrait.url && (
+
+        <BarScene
+          model={model}
+          quality={quality}
+          onFrame={bus.emit}
+          onStatus={setScene}
+        />
+        <div className="hud-scrim" aria-hidden="true" />
+        <Hud
+          model={model}
+          bus={bus}
+          quality={quality}
+          onQuality={chooseQuality}
+          onOpenMenu={() => setMenuOpen(true)}
+        />
+        <MenuDrawer model={model} open={menuOpen} onClose={closeMenu} />
+
+        {scene === "failed" && (
+          <div className="scene-fallback" role="alert">
+            <Wine size={34} />
+            <p>
+              {t("这台设备暂时无法启用 3D 吧台（WebGL 不可用）。播放、酒单与导入功能仍可正常使用。")}
+            </p>
+          </div>
+        )}
+
+        {characterSettingsOpen && (
           <CharacterSettings
-            asset={portrait.asset}
-            url={portrait.url}
+            rig={portrait.rig}
             onChange={portrait.updateRig}
-            onChoose={() => portraitInputRef.current?.click()}
             onClose={() => setCharacterSettingsOpen(false)}
           />
         )}
         {librarySettingsOpen && (
           <LocalCellarManager
-            tracks={tracks}
+            tracks={model.localTracks}
             busy={libraryBusy}
             onClear={emptyCellar}
             onClose={() => setLibrarySettingsOpen(false)}
@@ -158,65 +192,27 @@ export default function App() {
           />
         )}
         {model.spotifyPanelOpen && (
-          <SpotifyPanel onClose={() => model.setSpotifyPanelOpen(false)} />
+          <SpotifyPanel model={model} onClose={() => model.setSpotifyPanelOpen(false)} />
         )}
         {model.multiplayerPanelOpen && (
           <MultiplayerPanel
+            model={model}
             onClose={() => model.setMultiplayerPanelOpen(false)}
           />
         )}
-        <audio
-          ref={audioRef}
-          onError={() => {
-            setIsPlaying(false);
-            setStatusLine(
-              "这首音频无法解码，请检查文件是否完整，或转换为 MP3 / WAV 后重新导入。",
-            );
-          }}
-          onEnded={handleEnded}
-          onLoadedMetadata={(event) => {
-            const audio = event.currentTarget;
-            setDuration(audio.duration || currentTrack?.duration || 0);
-            if (currentTrack && audio.duration && !currentTrack.duration) {
-              updateTrack(currentTrack.id, { duration: audio.duration });
-            }
-          }}
-          onTimeUpdate={(event) =>
-            setProgress(event.currentTarget.currentTime || 0)
-          }
-        />
-
-        <FloatingToolbar model={model} />
-
-        <main className="tavern-layout">
-          <PlaylistMenu model={model} />
-
-          <TavernStage model={model} />
-
-          <TrackMenu model={model} />
-
-          <TrackEditor model={model} />
-        </main>
-
-        <footer className="status-strip">
-          <span>{statusLine}</span>
-          <button
-            className="library-summary"
-            onClick={() => setLibrarySettingsOpen(true)}
-          >
-            <Database size={13} />
-            {formatBytes(libraryBytes)}
-          </button>
-          <span>
-            {tracks.length} 首 · {readyTracks.length} 首已导入 · 当前第{" "}
-            {Math.max(0, carouselTrackIds.indexOf(currentTrackId ?? "")) + 1} 杯
-          </span>
-        </footer>
+        {model.isGuest && model.room.status !== "joined" && (
+          <RoomJoin model={model} />
+        )}
 
         {isDragActive && (
-          <div className="drop-overlay">
-            <Wine size={60} />
-            <p>松手，把这些歌倒进吧台</p>
+          <div className="drop-overlay" aria-hidden="true">
+            <div className="drop-card">
+              <svg viewBox="0 0 48 64" width="54" height="72">
+                <path d="M10 6h28l-3 22Q24 38 13 28Z M24 34v20 M14 56h20" />
+              </svg>
+              <strong>{t("松手，把这些歌倒进吧台")}</strong>
+              <span>{t("音频只留在这台电脑的浏览器里")}</span>
+            </div>
           </div>
         )}
       </div>
