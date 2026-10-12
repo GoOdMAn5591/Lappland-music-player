@@ -7,6 +7,8 @@ import { LocalCellarManager } from "./components/LocalCellarManager";
 import { MultiplayerPanel } from "./components/MultiplayerPanel";
 import { RoomJoin } from "./components/RoomJoin";
 import { SpotifyPanel } from "./components/SpotifyPanel";
+import { YouTubePanel } from "./components/YouTubePanel";
+import { YouTubeScreen } from "./components/YouTubeScreen";
 import { Hud } from "./components/hud/Hud";
 import { MenuDrawer } from "./components/hud/MenuDrawer";
 import { createFrameBus } from "./components/hud/frameBus";
@@ -158,6 +160,7 @@ export default function App() {
           onOpenMenu={() => setMenuOpen(true)}
         />
         <MenuDrawer model={model} open={menuOpen} onClose={closeMenu} />
+        <YouTubeScreen model={model} />
 
         {scene === "failed" && (
           <div className="scene-fallback" role="alert">
@@ -190,6 +193,9 @@ export default function App() {
               setEntrancePhase("closed");
             }}
           />
+        )}
+        {model.youtubePanelOpen && (
+          <YouTubePanel model={model} onClose={() => model.setYouTubePanelOpen(false)} />
         )}
         {model.spotifyPanelOpen && (
           <SpotifyPanel model={model} onClose={() => model.setSpotifyPanelOpen(false)} />

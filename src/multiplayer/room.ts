@@ -1,6 +1,14 @@
 import { assetUrl } from "../config";
 import { hashText } from "../app/recipes";
-import { isSpotifyTrack, type PlaybackMode, type TavernPlaylist, type TavernTrack } from "../storage";
+import {
+  YOUTUBE_ID,
+  isSpotifyTrack,
+  isYouTubeTrack,
+  type PlaybackMode,
+  type TavernPlaylist,
+  type TavernTrack,
+} from "../storage";
+import { toYouTubeTrack } from "../integrations/youtube/catalog";
 
 /**
  * 同席 (listening room) client.
@@ -11,9 +19,9 @@ import { isSpotifyTrack, type PlaybackMode, type TavernPlaylist, type TavernTrac
  * Server-Sent Events and forwards everyone's commands to the host, whose player
  * stays the single source of truth.
  *
- * Spotify songs are the exception: their audio is never relayed. The room
- * only shares which song and where; every friend plays it with their own
- * Spotify account in their own browser.
+ * Spotify songs and YouTube videos are the exception: they are never relayed.
+ * The room only shares which song and where; every friend plays it in their
+ * own browser (Spotify with their own account, YouTube in their own screen).
  */
 
 export type RoomRole = "host" | "guest";
@@ -59,6 +67,8 @@ export interface RoomTrack {
   look?: number;
   /** A Spotify song: each listener plays it from their own account. */
   spotify?: { uri: string; url: string; cover?: string };
+  /** A YouTube video: each listener plays it in their own YouTube screen. */
+  youtube?: { id: string; blocked?: boolean };
 }
 
 export interface RoomLibrary {
@@ -164,6 +174,7 @@ export function projectedPosition(
 
 export function toRoomTrack(track: TavernTrack): RoomTrack {
   const spotify = isSpotifyTrack(track) && track.spotifyUri;
+  const youtube = isYouTubeTrack(track) && track.youtubeId;
   return {
     look: track.look ?? hashText(track.id + track.fileName),
     id: track.id,
@@ -176,12 +187,19 @@ export function toRoomTrack(track: TavernTrack): RoomTrack {
     glass: track.glass,
     tint: track.tint,
     mimeType: track.mimeType,
-    available: spotify ? true : track.status === "ready" && Boolean(track.objectUrl),
-    // Spotify covers come straight from Spotify, never through the tavern
-    hasCover: spotify ? false : Boolean(track.coverUrl),
+    available: spotify
+      ? true
+      : youtube
+        ? track.status === "ready"
+        : track.status === "ready" && Boolean(track.objectUrl),
+    // Spotify / YouTube pictures come straight from them, never through the tavern
+    hasCover: spotify || youtube ? false : Boolean(track.coverUrl),
     addedAt: track.addedAt,
     ...(spotify
       ? { spotify: { uri: track.spotifyUri!, url: track.spotifyUrl ?? "", cover: track.coverUrl } }
+      : {}),
+    ...(youtube
+      ? { youtube: { id: track.youtubeId!, ...(track.status !== "ready" ? { blocked: true } : {}) } }
       : {}),
   };
 }
@@ -207,6 +225,24 @@ export function fromRoomTrack(raw: RoomTrack, key: string): TavernTrack {
     mimeType: text(raw.mimeType, "audio/mpeg"),
     addedAt: Number(raw.addedAt) || 0,
   };
+  const youtubeId = raw.youtube && text(raw.youtube.id);
+  if (youtubeId && YOUTUBE_ID.test(youtubeId)) {
+    return {
+      ...toYouTubeTrack({
+        id: youtubeId,
+        title: track.title,
+        author: track.artist,
+        duration: track.duration,
+        ...(raw.youtube!.blocked ? { blocked: true } : {}),
+      }),
+      id: track.id,
+      alias: track.alias,
+      tags: track.tags,
+      glass: track.glass,
+      tint: track.tint,
+      look: typeof track.look === "number" ? track.look : undefined,
+    };
+  }
   const spotify = raw.spotify && SPOTIFY_URI.exec(text(raw.spotify.uri));
   if (spotify) {
     const url = text(raw.spotify!.url);

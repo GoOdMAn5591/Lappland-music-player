@@ -31,7 +31,10 @@ try {
       await import("/src/multiplayer/room.ts");
     const { toTavernTrack, parsePlaylistId } =
       await import("/src/integrations/spotify/api.ts");
-    const { persistablePlaylists } = await import("/src/storage/index.ts");
+    const { persistablePlaylists, expireYouTube, cleanYouTubeLink } =
+      await import("/src/storage/index.ts");
+    const { parseYouTubeLink, toYouTubeTrack } =
+      await import("/src/integrations/youtube/catalog.ts");
     const results = {};
     const store = createPlayerStore();
     let calls = 0;
@@ -203,12 +206,38 @@ try {
       ])[0].trackIds.length === 0 &&
       parsePlaylistId("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc") ===
         "37i9dQZF1DXcBWIGoYBM5M";
+    // YouTube: links parse, videos travel as IDs only, stored data expires after 30 days
+    const parsed = [
+      parseYouTubeLink("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabcdefghij123"),
+      parseYouTubeLink("https://youtu.be/dQw4w9WgXcQ?si=x"),
+      parseYouTubeLink("https://evil.example/watch?v=dQw4w9WgXcQ"),
+    ];
+    results.youtubeLinks =
+      parsed[0]?.list === "PLabcdefghij123" &&
+      parsed[1]?.video === "dQw4w9WgXcQ" &&
+      parsed[2] === undefined;
+    const video = toYouTubeTrack({ id: "dQw4w9WgXcQ", title: "T", author: "A", duration: 0 });
+    const guestVideo = fromRoomTrack(toRoomTrack(video), "k");
+    results.youtubeNoRelay =
+      !video.objectUrl &&
+      !toRoomTrack(video).hasCover &&
+      guestVideo.youtubeId === "dQw4w9WgXcQ" &&
+      !guestVideo.objectUrl;
+    const link = cleanYouTubeLink({
+      list: "PLabcdefghij123",
+      items: [{ id: "dQw4w9WgXcQ", title: "T" }, { id: "bad id" }],
+      fetchedAt: Date.now() - 31 * 24 * 3600 * 1000,
+    });
+    results.youtubeExpiry =
+      link.items.length === 1 &&
+      expireYouTube({ id: "y", name: "Y", mood: "", trackIds: ["youtube-dQw4w9WgXcQ"], youtube: link })
+        .youtube.items.length === 0;
     return results;
   });
   for (const [name, result] of Object.entries(contracts))
     assert(result, `Contract failed: ${name}`);
   assert(
-    Object.keys(contracts).length === 19,
+    Object.keys(contracts).length === 22,
     `Missing contract assertion: ${JSON.stringify(contracts)}`,
   );
   await page.getByRole("button", { name: "更多选项", exact: true }).click();

@@ -29,9 +29,11 @@ export interface TavernTrack {
    * is played by each listener's own Spotify account and never stored,
    * downloaded or relayed — the tavern only knows its URI and metadata.
    */
-  source?: "spotify";
+  source?: "spotify" | "youtube";
   /** spotify:track:… */
   spotifyUri?: string;
+  /** An 11-character YouTube video ID, played in the tavern's visible YouTube screen. */
+  youtubeId?: string;
   /** The track on open.spotify.com (Spotify asks for a link back). */
   spotifyUrl?: string;
   status: TrackStatus;
@@ -48,6 +50,32 @@ export interface SpotifyLink {
   owner?: string;
 }
 
+/** One video on a YouTube menu page, as read from YouTube. */
+export interface YouTubeItem {
+  id: string;
+  title: string;
+  author: string;
+  /** Seconds; 0 until the video has been played once. */
+  duration: number;
+  /** YouTube refused to play it outside youtube.com (embedding disabled, removed…). */
+  blocked?: boolean;
+}
+
+/**
+ * A menu page made of YouTube videos: a YouTube playlist, or videos added
+ * one by one. YouTube lets apps keep what they read for at most 30 days, so
+ * the list carries the time it was read and is dropped after that.
+ */
+export interface YouTubeLink {
+  /** Playlist ID; absent for a page of single videos. */
+  list?: string;
+  url: string;
+  items: YouTubeItem[];
+  fetchedAt: number;
+}
+
+export const YOUTUBE_KEEP_MS = 30 * 24 * 3600 * 1000;
+
 export interface TavernPlaylist {
   id: string;
   name: string;
@@ -55,6 +83,7 @@ export interface TavernPlaylist {
   /** For a Spotify page these are filled in from Spotify each session, never saved. */
   trackIds: string[];
   spotify?: SpotifyLink;
+  youtube?: YouTubeLink;
 }
 
 export interface PersistedTrack extends Omit<
@@ -181,6 +210,21 @@ export async function saveLibrary(input: TavernLibrary): Promise<void> {
 
 export const isSpotifyTrack = (track?: Pick<TavernTrack, "source">) =>
   track?.source === "spotify";
+export const isYouTubeTrack = (track?: Pick<TavernTrack, "source">) =>
+  track?.source === "youtube";
+/** Spotify and YouTube songs stream from elsewhere; everything else is a local file. */
+export const isStreamTrack = (track?: Pick<TavernTrack, "source">) =>
+  Boolean(track?.source);
+
+export const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+export const youtubeTrackId = (videoId: string) => `youtube-${videoId}`;
+
+/** A YouTube page past YouTube's 30-day limit keeps its link but forgets its videos. */
+export function expireYouTube(playlist: TavernPlaylist, now = Date.now()): TavernPlaylist {
+  const link = playlist.youtube;
+  if (!link || !link.items.length || now - link.fetchedAt < YOUTUBE_KEEP_MS) return playlist;
+  return { ...playlist, trackIds: [], youtube: { ...link, items: [] } };
+}
 
 /**
  * What goes into IndexedDB / the exported JSON: local tracks, and Spotify
@@ -188,8 +232,47 @@ export const isSpotifyTrack = (track?: Pick<TavernTrack, "source">) =>
  */
 export function persistablePlaylists(playlists: TavernPlaylist[]): TavernPlaylist[] {
   return playlists.map((playlist) =>
-    playlist.spotify ? { ...playlist, trackIds: [] } : playlist,
+    playlist.spotify ? { ...playlist, trackIds: [] } : expireYouTube(playlist),
   );
+}
+
+const text = (value: unknown, max: number) =>
+  typeof value === "string" ? value.slice(0, max) : "";
+
+/** Whatever a saved menu or the host says about a YouTube page, keep only clean fields. */
+export function cleanYouTubeLink(value: unknown): YouTubeLink | undefined {
+  const link = value as YouTubeLink | undefined;
+  if (!link || typeof link !== "object" || !Array.isArray(link.items)) return;
+  const list =
+    typeof link.list === "string" && /^[A-Za-z0-9_-]{10,64}$/.test(link.list)
+      ? link.list
+      : undefined;
+  const seen = new Set<string>();
+  const items: YouTubeItem[] = [];
+  for (const raw of link.items.slice(0, 500)) {
+    const item = raw as YouTubeItem;
+    if (!item || !YOUTUBE_ID.test(String(item.id)) || seen.has(item.id)) continue;
+    seen.add(item.id);
+    items.push({
+      id: item.id,
+      title: text(item.title, 200),
+      author: text(item.author, 120),
+      duration:
+        typeof item.duration === "number" && Number.isFinite(item.duration)
+          ? Math.max(0, Math.min(86_400, item.duration))
+          : 0,
+      ...(item.blocked ? { blocked: true } : {}),
+    });
+  }
+  const fetchedAt = Number(link.fetchedAt);
+  return {
+    ...(list ? { list } : {}),
+    url: list
+      ? `https://www.youtube.com/playlist?list=${list}`
+      : "https://www.youtube.com/",
+    items,
+    fetchedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.min(fetchedAt, Date.now()) : 0,
+  };
 }
 
 const SPOTIFY_PLAYLIST_ID = /^([A-Za-z0-9]{22}|liked)$/;
@@ -227,7 +310,7 @@ export function parseLibraryConfig(text: string): TavernLibrary {
   const ids = new Set<string>();
   const fingerprints = new Set<string>();
   // Spotify songs are never saved; an old or hand-edited file may still carry some
-  const tracks = value.tracks.filter((track) => track?.source !== "spotify").map((track) => {
+  const tracks = value.tracks.filter((track) => !track?.source).map((track) => {
     if (
       !track ||
       [track.id, track.fingerprint, track.fileName, track.title].some(
@@ -280,13 +363,19 @@ export function parseLibraryConfig(text: string): TavernLibrary {
       throw new Error("Invalid playlist");
     playlistIds.add(playlist.id);
     const spotify = cleanSpotifyLink(playlist.spotify);
-    return {
+    const youtube = spotify ? undefined : cleanYouTubeLink(playlist.youtube);
+    return expireYouTube({
       id: playlist.id,
       name: playlist.name,
       mood: typeof playlist.mood === "string" ? playlist.mood : "",
-      trackIds: spotify ? [] : [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
+      trackIds: spotify
+        ? []
+        : youtube
+          ? youtube.items.map((item) => youtubeTrackId(item.id))
+          : [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
       ...(spotify ? { spotify } : {}),
-    };
+      ...(youtube ? { youtube } : {}),
+    });
   });
   if (!playlists.length) playlists.push(...createDefaultLibrary().playlists);
   return {
@@ -298,7 +387,8 @@ export function parseLibraryConfig(text: string): TavernLibrary {
       : playlists[0].id,
     currentTrackId:
       value.currentTrackId &&
-      (ids.has(value.currentTrackId) || /^spotify-[A-Za-z0-9]{22}$/.test(value.currentTrackId))
+      (ids.has(value.currentTrackId) ||
+        /^(spotify-[A-Za-z0-9]{22}|youtube-[A-Za-z0-9_-]{11})$/.test(value.currentTrackId))
         ? value.currentTrackId
         : undefined,
     playbackMode: ["sequence", "shuffle", "repeat-one", "repeat-all"].includes(

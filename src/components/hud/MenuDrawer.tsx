@@ -6,6 +6,7 @@ import {
   FileUp,
   GripVertical,
   LoaderCircle,
+  MonitorPlay,
   Music2,
   Pencil,
   Plus,
@@ -26,7 +27,8 @@ import {
 import type { TavernController } from "../../app/useTavernController";
 import { GlassIcon } from "./GlassIcon";
 import { getLang, t } from "../../i18n";
-import { isSpotifyTrack } from "../../storage";
+import { isSpotifyTrack, YOUTUBE_KEEP_MS } from "../../storage";
+import { youtubeWatchUrl } from "../../integrations/youtube/catalog";
 
 /**
  * The drink menu: playlists are menu sections, songs are drinks with the
@@ -70,9 +72,25 @@ export function MenuDrawer({
     spotifyLoading,
     refreshSpotifyPlaylist,
     setSpotifyPanelOpen,
+    setYouTubePanelOpen,
+    setYouTubeRefreshId,
+    removeYouTubeVideo,
     isPlayable,
   } = model;
   const spotifyPage = selectedPlaylist?.spotify;
+  const youtubePage = selectedPlaylist?.youtube;
+  /** YouTube's 30-day limit passed: the page needs reading again. */
+  const youtubeExpired = Boolean(
+    youtubePage &&
+      !youtubePage.items.length &&
+      youtubePage.fetchedAt > 0 &&
+      Date.now() - youtubePage.fetchedAt >= YOUTUBE_KEEP_MS,
+  );
+  const refreshYouTube = () => {
+    if (!selectedPlaylist?.youtube?.list) return;
+    setYouTubeRefreshId(selectedPlaylist.id);
+    setYouTubePanelOpen(true);
+  };
   const spotifyBusy = Boolean(selectedPlaylist && spotifyLoading.includes(selectedPlaylist.id));
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -142,13 +160,21 @@ export function MenuDrawer({
               {playlists.map((playlist) => (
                 <button
                   key={playlist.id}
-                  className={`menu-section ${playlist.id === selectedPlaylist?.id ? "is-active" : ""} ${playlist.spotify ? "is-spotify" : ""}`}
+                  className={`menu-section ${playlist.id === selectedPlaylist?.id ? "is-active" : ""} ${playlist.spotify ? "is-spotify" : ""} ${playlist.youtube ? "is-youtube" : ""}`}
                   onClick={() => setSelectedPlaylistId(playlist.id)}
                   aria-pressed={playlist.id === selectedPlaylist?.id}
-                  data-tip={playlist.spotify ? t("Spotify 歌单") : undefined}
+                  data-tip={
+                    playlist.spotify
+                      ? t("Spotify 歌单")
+                      : playlist.youtube
+                        ? t("YouTube 歌单")
+                        : undefined
+                  }
                 >
                   {playlist.spotify ? (
                     <Music2 size={12} className="spotify-mark" aria-hidden="true" />
+                  ) : playlist.youtube ? (
+                    <MonitorPlay size={12} className="youtube-mark" aria-hidden="true" />
                   ) : (
                     <span className="wax" aria-hidden="true" />
                   )}
@@ -229,7 +255,9 @@ export function MenuDrawer({
                     <span>
                       {selectedPlaylist.spotify
                         ? t("撕下「{name}」？Spotify 上的歌单不受影响。", { name: selectedPlaylist.name })
-                        : t("撕下「{name}」？歌曲仍留在酒窖。", { name: t(selectedPlaylist.name) })}
+                        : selectedPlaylist.youtube
+                          ? t("撕下「{name}」？YouTube 上的视频不受影响。", { name: selectedPlaylist.name })
+                          : t("撕下「{name}」？歌曲仍留在酒窖。", { name: t(selectedPlaylist.name) })}
                     </span>
                     <button
                       className="danger"
@@ -260,6 +288,28 @@ export function MenuDrawer({
                       >
                         <ExternalLink size={14} />
                       </a>
+                    )}
+                    {youtubePage?.list && (
+                      <a
+                        className="ghost-icon"
+                        href={youtubePage.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("在 YouTube 打开这个歌单")}
+                        data-tip={t("在 YouTube 打开")}
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    {youtubePage?.list && !isGuest && (
+                      <button
+                        className="ghost-icon"
+                        aria-label={t("从 YouTube 重新读取")}
+                        data-tip={t("从 YouTube 刷新")}
+                        onClick={refreshYouTube}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
                     )}
                     {spotifyPage && !isGuest && (
                       <button
@@ -319,7 +369,31 @@ export function MenuDrawer({
             </label>
 
             <ol className="drink-list">
-              {!visibleTrackIds.length && spotifyPage && !searchTerm ? (
+              {!visibleTrackIds.length && youtubePage && !searchTerm ? (
+                <li className="drink-empty">
+                  <button
+                    onClick={() => {
+                      if (isGuest) return;
+                      if (youtubeExpired) refreshYouTube();
+                      else setYouTubePanelOpen(true);
+                    }}
+                  >
+                    <MonitorPlay size={30} />
+                    <strong>
+                      {youtubeExpired
+                        ? t("这页的 YouTube 资料过期了")
+                        : t("这页还没有能播放的视频")}
+                    </strong>
+                    <span>
+                      {isGuest
+                        ? t("等房主那边放上视频。")
+                        : youtubeExpired
+                          ? t("YouTube 规定读到的资料最多保存 30 天：点这里重新读取。")
+                          : t("点这里粘贴 YouTube 歌单或视频链接。")}
+                    </span>
+                  </button>
+                </li>
+              ) : !visibleTrackIds.length && spotifyPage && !searchTerm ? (
                 <li className="drink-empty">
                   <button
                     onClick={() => !isGuest && !spotifyBusy && setSpotifyPanelOpen(true)}
@@ -371,12 +445,14 @@ export function MenuDrawer({
                   const recipe = recipeFor(track);
                   const active = track.id === currentTrackId;
                   const fromSpotify = isSpotifyTrack(track);
+                  const streamed = Boolean(track.source);
                   const offline = fromSpotify && !isGuest && !isPlayable(track);
+                  const fixedOrder = Boolean(spotifyPage || youtubePage?.list);
                   return (
                     <li
                       key={track.id}
                       className={`drink-row ${active ? "is-active" : ""} ${track.status === "missing" || offline ? "is-missing" : ""} ${dropTargetId === track.id ? "is-drop" : ""}`}
-                      draggable={!isGuest && !spotifyPage}
+                      draggable={!isGuest && !fixedOrder}
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/plain", track.id);
@@ -434,7 +510,11 @@ export function MenuDrawer({
                             ))}
                             {track.status === "missing" && (
                               <em className="warn">
-                                {isGuest ? t("房主缺原酒") : t("需重新导入")}
+                                {track.youtubeId
+                                  ? t("不能在别的网站播放")
+                                  : isGuest
+                                    ? t("房主缺原酒")
+                                    : t("需重新导入")}
                               </em>
                             )}
                             {offline && <em className="warn">{t("Spotify 未连接")}</em>}
@@ -453,7 +533,29 @@ export function MenuDrawer({
                           <ExternalLink size={14} />
                         </a>
                       )}
-                      {!isGuest && !fromSpotify && (
+                      {track.youtubeId && (
+                        <a
+                          className="ghost-icon edit"
+                          href={youtubeWatchUrl(track.youtubeId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={t("在 YouTube 打开这个视频")}
+                          data-tip={t("在 YouTube 打开")}
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                      )}
+                      {track.youtubeId && youtubePage && !youtubePage.list && !isGuest && (
+                        <button
+                          className="ghost-icon edit"
+                          aria-label={t("从点歌单里拿掉")}
+                          data-tip={t("拿掉")}
+                          onClick={() => removeYouTubeVideo(selectedPlaylist!.id, track.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      {!isGuest && !streamed && (
                         <button
                           className="ghost-icon edit"
                           aria-label={t("编辑歌曲信息")}
@@ -479,6 +581,9 @@ export function MenuDrawer({
               </button>
               <button onClick={() => setSpotifyPanelOpen(true)}>
                 <Music2 size={15} /> {t("Spotify 歌单")}
+              </button>
+              <button onClick={() => setYouTubePanelOpen(true)}>
+                <MonitorPlay size={15} /> YouTube
               </button>
               <button onClick={() => configInputRef.current?.click()}>
                 <FileUp size={15} /> {t("导入菜单")}
@@ -621,7 +726,7 @@ function DrinkEditor({ model }: { model: TavernController }) {
       <fieldset className="note-field">
         <legend>{t("放入菜单")}</legend>
         <div className="playlist-checks">
-          {playlists.filter((playlist) => !playlist.spotify).map((playlist) => (
+          {playlists.filter((playlist) => !playlist.spotify && !playlist.youtube).map((playlist) => (
             <label key={playlist.id}>
               <input
                 type="checkbox"

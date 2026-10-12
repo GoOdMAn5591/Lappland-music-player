@@ -32,8 +32,12 @@ Guests often open the link with the browser's page translation on. Translation r
 - Quick-tunnel URLs change every time a room opens, and Cloudflare offers quick tunnels without uptime guarantees. A named tunnel or a hosted relay would be needed for a permanent address.
 - Every listener streams from the host's upload bandwidth. Large FLAC/WAV files take longer to start for guests.
 - If the host page disconnects, the room survives for 90 s, so a refresh doesn't end it. Closing the server window ends the room.
-- Spotify songs are never relayed. See below.
+- Spotify songs and YouTube videos are never relayed. See below.
 
 ## Spotify songs
 
 Spotify audio must not be rebroadcast, so a Spotify song in the room carries only its URI, metadata and the Spotify cover URL (`RoomTrack.spotify`). The host's library also shares the host app's public Client ID. Each guest signs in with their own Spotify Premium account (which must be on the host app's User Management list) and plays the song on their own Web Playback SDK device; the room only tells them which song and which second. Guests jump when more than 0.75 s off; Spotify has no playback-rate control. A guest who isn't signed in still sees the song, cover and progress, plus a prompt to sign in. Details in [spotify.md](spotify.md).
+
+## YouTube videos
+
+A YouTube video carries only its video ID and title (`RoomTrack.youtube`). Every listener, guests included, plays it in their own YouTube screen; no account is needed. The host's player is the clock (`rolling` counts a short re-buffer after a jump as still playing). Guests start at `target + lead` (lead learned from start latency, ignoring waits over 5 s, which are ads) and jump when more than 0.5 s off, or at once when the host's news says someone jumped. Pressing pause or dragging the seek bar inside YouTube's own player becomes a room command (`toggle` / `seek`); the guest's sync loop checks for such a jump first and holds off for 2.5 s, so it never pulls the video back before the host answers. Details in [youtube.md](youtube.md).

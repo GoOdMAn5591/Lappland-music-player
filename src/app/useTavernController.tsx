@@ -25,8 +25,13 @@ import {
   clearLibrary,
   deleteStoredTrack,
   createDefaultLibrary,
+  expireYouTube,
   inspectStorage,
   isSpotifyTrack,
+  isYouTubeTrack,
+  youtubeTrackId,
+  type YouTubeItem,
+  type YouTubeLink,
   loadLibrary,
   parseLibraryConfig,
   persistablePlaylists,
@@ -49,6 +54,22 @@ import {
   SpotifyApiError,
   type SpotifyPlaylistInfo,
 } from "../integrations/spotify/api";
+import { youtubeEngine } from "../integrations/youtube/player";
+import { toYouTubeTrack } from "../integrations/youtube/catalog";
+/** A page in a new order (a YouTube picks page keeps its videos in the same order). */
+function withOrder(playlist: TavernPlaylist, order: string[]): TavernPlaylist {
+  if (!playlist.youtube) return { ...playlist, trackIds: order };
+  const byTrack = new Map(playlist.youtube.items.map((item) => [youtubeTrackId(item.id), item]));
+  return {
+    ...playlist,
+    trackIds: order,
+    youtube: {
+      ...playlist.youtube,
+      items: order.map((id) => byTrack.get(id)).filter((item): item is YouTubeItem => Boolean(item)),
+    },
+  };
+}
+
 export function useTavernController() {
   // Opened from a friend's invite link: this page mirrors their bar.
   const [inviteKey] = useState(inviteKeyFromLocation);
@@ -92,6 +113,9 @@ export function useTavernController() {
   const [characterSettingsOpen, setCharacterSettingsOpen] = useState(false);
   const [librarySettingsOpen, setLibrarySettingsOpen] = useState(false);
   const [spotifyPanelOpen, setSpotifyPanelOpen] = useState(false);
+  const [youtubePanelOpen, setYouTubePanelOpen] = useState(false);
+  /** A YouTube page the panel should read again as soon as it opens. */
+  const [youtubeRefreshId, setYouTubeRefreshId] = useState<string>();
   const [multiplayerPanelOpen, setMultiplayerPanelOpen] = useState(false);
   const [libraryBytes, setLibraryBytes] = useState(0);
   const [libraryBusy, setLibraryBusy] = useState(false);
@@ -150,7 +174,7 @@ export function useTavernController() {
         setTracks(restored);
         setPlaylists(
           library.playlists.length
-            ? library.playlists
+            ? library.playlists.map((playlist) => expireYouTube(playlist))
             : createDefaultLibrary().playlists,
         );
         setSelectedPlaylistId(library.selectedPlaylistId || "today-menu");
@@ -235,9 +259,21 @@ export function useTavernController() {
     [],
   );
 
+  /** YouTube songs live on their menu pages (a guest gets them from the host instead). */
+  const youtubeTracks = useMemo(() => {
+    if (isGuest) return [];
+    const byId = new Map<string, TavernTrack>();
+    for (const playlist of playlists)
+      for (const item of playlist.youtube?.items ?? [])
+        if (!byId.has(item.id)) byId.set(item.id, toYouTubeTrack(item));
+    return [...byId.values()];
+  }, [playlists, isGuest]);
   const allTracks = useMemo(
-    () => (spotifyTracks.length ? [...tracks, ...spotifyTracks] : tracks),
-    [tracks, spotifyTracks],
+    () =>
+      spotifyTracks.length || youtubeTracks.length
+        ? [...tracks, ...spotifyTracks, ...youtubeTracks]
+        : tracks,
+    [tracks, spotifyTracks, youtubeTracks],
   );
   const trackMap = useMemo(
     () => new Map(allTracks.map((track) => [track.id, track])),
@@ -251,7 +287,11 @@ export function useTavernController() {
       Boolean(
         track &&
           track.status === "ready" &&
-          (isSpotifyTrack(track) ? spotifyReady && track.spotifyUri : track.objectUrl),
+          (isSpotifyTrack(track)
+            ? spotifyReady && track.spotifyUri
+            : isYouTubeTrack(track)
+              ? track.youtubeId
+              : track.objectUrl),
       ),
     [spotifyReady],
   );
@@ -432,6 +472,7 @@ export function useTavernController() {
   useEffect(() => {
     const audio = audioRef.current;
     spotifyEngine.setVolume(volume);
+    youtubeEngine.setVolume(volume);
     if (!audio) return;
     void localSource.setVolume(volume);
   }, [volume]);
@@ -442,6 +483,33 @@ export function useTavernController() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    // one source at a time: YouTube's screen goes quiet unless it's YouTube's turn
+    if (!isYouTubeTrack(currentTrack) && youtubeEngine.videoId) youtubeEngine.stop();
+    if (isYouTubeTrack(currentTrack)) {
+      if (audio.getAttribute("src")) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+      if (spotifyEngine.uri) void spotifyEngine.stop();
+      setDuration(currentTrack!.duration || 0);
+      // a guest's screen is lined up with the host by the room (useRoom)
+      if (isGuest) return;
+      const id = currentTrack!.youtubeId!;
+      if (!isPlaying) {
+        if (youtubeEngine.isOn(id)) youtubeEngine.pause();
+        return;
+      }
+      if (!youtubeEngine.isOn(id) || youtubeEngine.finished) {
+        setProgress(0);
+        void youtubeEngine.play(id, 0).then((ok) => {
+          if (ok || !youtubeEngine.isOn(id)) return;
+          setIsPlaying(false);
+          setStatusLine(t("YouTube 播放器没加载出来：检查网络，或暂时关掉拦截广告的扩展。"));
+        });
+      } else if (!youtubeEngine.playing && !youtubeEngine.starting) youtubeEngine.resume();
+      return;
+    }
     if (isSpotifyTrack(currentTrack)) {
       // Never two songs at once (and Spotify forbids overlapping its audio): local goes quiet.
       if (audio.getAttribute("src")) {
@@ -628,10 +696,10 @@ export function useTavernController() {
       const undecodable: string[] = [];
       // local songs never go onto a Spotify page: use the first local menu page instead
       const selectedId =
-        selectedPlaylist && !selectedPlaylist.spotify
+        selectedPlaylist && !selectedPlaylist.spotify && !selectedPlaylist.youtube
           ? selectedPlaylist.id
-          : (libraryRef.current.playlists.find((playlist) => !playlist.spotify)?.id ??
-            "today-menu");
+          : (libraryRef.current.playlists.find((playlist) => !playlist.spotify && !playlist.youtube)
+              ?.id ?? "today-menu");
 
       for (const file of fileArray) {
         const fingerprint = fileFingerprint(file);
@@ -747,7 +815,8 @@ export function useTavernController() {
       setTracks(nextTracks);
       tracksRef.current = nextTracks;
       setPlaylists(nextPlaylists);
-      if (selectedPlaylist?.spotify && importedIds.length) setSelectedPlaylistId(selectedId);
+      if ((selectedPlaylist?.spotify || selectedPlaylist?.youtube) && importedIds.length)
+        setSelectedPlaylistId(selectedId);
       if (!currentTrackId && importedIds[0]) setCurrentTrackId(importedIds[0]);
       const rejected = undecodable.length
         ? t("《{names}》{more}无法解码，已退回（文件可能损坏，或可转成 MP3 / WAV 再试）。", {
@@ -896,9 +965,13 @@ export function useTavernController() {
       !selectedPlaylist
     )
       return;
-    if (selectedPlaylist.spotify) {
+    if (selectedPlaylist.spotify || selectedPlaylist.youtube?.list) {
       setDropTargetId(undefined);
-      setStatusLine(t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。"));
+      setStatusLine(
+        selectedPlaylist.spotify
+          ? t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。")
+          : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
+      );
       return;
     }
     const order = [...selectedPlaylist.trackIds];
@@ -909,9 +982,7 @@ export function useTavernController() {
     order.splice(to, 0, draggedTrackId);
     setPlaylists((current) =>
       current.map((playlist) =>
-        playlist.id === selectedPlaylist.id
-          ? { ...playlist, trackIds: order }
-          : playlist,
+        playlist.id === selectedPlaylist.id ? withOrder(playlist, order) : playlist,
       ),
     );
     setDropTargetId(undefined);
@@ -925,8 +996,12 @@ export function useTavernController() {
       return;
     }
     if (!selectedPlaylist || trackId === targetTrackId) return;
-    if (selectedPlaylist.spotify) {
-      setStatusLine(t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。"));
+    if (selectedPlaylist.spotify || selectedPlaylist.youtube?.list) {
+      setStatusLine(
+        selectedPlaylist.spotify
+          ? t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。")
+          : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
+      );
       return;
     }
     const order = [...selectedPlaylist.trackIds];
@@ -940,9 +1015,7 @@ export function useTavernController() {
     order.splice(to, 0, trackId);
     setPlaylists((current) =>
       current.map((playlist) =>
-        playlist.id === selectedPlaylist.id
-          ? { ...playlist, trackIds: order }
-          : playlist,
+        playlist.id === selectedPlaylist.id ? withOrder(playlist, order) : playlist,
       ),
     );
     setStatusLine(t("杯子已经沿吧台重新摆好。"));
@@ -1012,8 +1085,8 @@ export function useTavernController() {
 
   const toggleTrackInPlaylist = (playlistId: string, trackId: string) => {
     const target = playlists.find((playlist) => playlist.id === playlistId);
-    if (target?.spotify || isSpotifyTrack(trackMap.get(trackId))) {
-      setStatusLine(t("Spotify 的歌只待在它自己的歌单页里。"));
+    if (target?.spotify || target?.youtube || trackMap.get(trackId)?.source) {
+      setStatusLine(t("Spotify 和 YouTube 的歌只待在它们自己的歌单页里。"));
       return;
     }
     setPlaylists((current) =>
@@ -1104,6 +1177,7 @@ export function useTavernController() {
   const seekHere = (value: number) => {
     const position = Math.max(0, value);
     if (isSpotifyTrack(currentTrack)) void spotifyEngine.seek(position);
+    else if (isYouTubeTrack(currentTrack)) youtubeEngine.seek(position);
     else void localSource.seek(position);
     setProgress(position);
   };
@@ -1277,6 +1351,205 @@ export function useTavernController() {
     void refreshSpotifyPlaylist(playlist.id);
   };
 
+  // --------------------------------------------------------------- YouTube
+  const youtubeIdNow = isYouTubeTrack(currentTrack) ? currentTrack?.youtubeId : undefined;
+
+  /** Remember what YouTube told us about a video (length, title) on every page holding it. */
+  const learnYouTube = useCallback((id: string, patch: Partial<YouTubeItem>) => {
+    const needs = playlistsRef.current.some((playlist) =>
+      playlist.youtube?.items.some(
+        (item) =>
+          item.id === id &&
+          (Object.keys(patch) as (keyof YouTubeItem)[]).some(
+            (key) => patch[key] !== undefined && patch[key] !== "" && item[key] !== patch[key],
+          ),
+      ),
+    );
+    if (!needs) return;
+    setPlaylists((current) =>
+      current.map((playlist) =>
+        playlist.youtube?.items.some((item) => item.id === id)
+          ? {
+              ...playlist,
+              youtube: {
+                ...playlist.youtube,
+                items: playlist.youtube.items.map((item) =>
+                  item.id === id
+                    ? {
+                        ...item,
+                        ...(patch.duration ? { duration: Math.round(patch.duration) } : {}),
+                        ...(patch.title && !item.title ? { title: patch.title } : {}),
+                        ...(patch.author && !item.author ? { author: patch.author } : {}),
+                        ...(patch.blocked ? { blocked: true } : {}),
+                      }
+                    : item,
+                ),
+              },
+            }
+          : playlist,
+      ),
+    );
+  }, []);
+
+  // where the video is (the host's bar; a guest's follows the room)
+  useEffect(() => {
+    if (!youtubeIdNow || isGuest) return;
+    const tick = () => {
+      if (!youtubeEngine.isOn(youtubeIdNow)) return setProgress(0);
+      setProgress(youtubeEngine.position());
+      if (youtubeEngine.durationS > 0) {
+        setDuration(youtubeEngine.durationS);
+        learnYouTube(youtubeIdNow, {
+          duration: youtubeEngine.durationS,
+          title: youtubeEngine.title,
+          author: youtubeEngine.author,
+        });
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [youtubeIdNow, isGuest, learnYouTube]);
+
+  // finished / refused / clicked on YouTube's own controls
+  const youtubeEventsRef = useRef({
+    ended: (_id: string) => {},
+    error: (_id: string, _code?: number) => {},
+    user: (_id: string, _action: "play" | "pause" | "seek", _position: number) => {},
+  });
+  youtubeEventsRef.current = {
+    ended: (id) => {
+      if (isGuest || id !== youtubeIdNow) return;
+      if (playbackMode === "repeat-one") {
+        void youtubeEngine.play(id, 0);
+        return;
+      }
+      setPourCount((count) => count + 1);
+      playByOffset(1);
+    },
+    error: (id, code) => {
+      if (id !== youtubeIdNow) return;
+      const refused = code === 100 || code === 101 || code === 150;
+      setStatusLine(
+        code === 100
+          ? t("这个 YouTube 视频已被删除或设为私密，跳过这一杯。")
+          : refused
+            ? t("这个视频的作者不允许在别的网站播放，跳过这一杯。")
+            : t("YouTube 播放出错了，跳过这一杯。"),
+      );
+      if (isGuest) return;
+      if (refused) learnYouTube(id, { blocked: true });
+      playByOffset(1);
+    },
+    user: (id, action, position) => {
+      if (id !== youtubeIdNow) return;
+      // pressed on YouTube's own controls: the whole bar follows
+      if (isGuest) {
+        if (action === "seek") roomSendRef.current({ type: "seek", position });
+        else if ((action === "pause") === isPlaying) roomSendRef.current({ type: "toggle" });
+        return;
+      }
+      if (action === "play") setIsPlaying(true);
+      if (action === "pause") setIsPlaying(false);
+      if (action === "seek") setProgress(position);
+    },
+  };
+  useEffect(() => {
+    const offs = [
+      youtubeEngine.on("ended", ({ id }) => youtubeEventsRef.current.ended(id)),
+      youtubeEngine.on("error", ({ id, code }) => youtubeEventsRef.current.error(id, code)),
+      youtubeEngine.on("user", ({ id, user }) =>
+        user && youtubeEventsRef.current.user(id, user.action, user.position),
+      ),
+    ];
+    return () => offs.forEach((off) => off());
+  }, []);
+
+  /** Put a YouTube playlist on the menu (or read an existing page again). */
+  const linkYouTube = (link: YouTubeLink, name: string, pageId?: string) => {
+    if (isGuest) return;
+    const trackIds = link.items.map((item) => youtubeTrackId(item.id));
+    const existing =
+      (pageId && playlistsRef.current.find((item) => item.id === pageId)) ||
+      (link.list && playlistsRef.current.find((item) => item.youtube?.list === link.list));
+    if (existing) {
+      playlistsRef.current = playlistsRef.current.map((item) =>
+        item.id === existing.id ? { ...item, trackIds, youtube: link } : item,
+      );
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(existing.id);
+      setStatusLine(t("「{name}」已从 YouTube 重新读取：{n} 杯。", { name: existing.name, n: trackIds.length }));
+      return;
+    }
+    const playlist: TavernPlaylist = {
+      id: `youtube-${link.list ?? "picks"}-${Date.now().toString(36)}`,
+      name,
+      mood: "YouTube",
+      trackIds,
+      youtube: link,
+    };
+    playlistsRef.current = [...playlistsRef.current, playlist];
+    setPlaylists(playlistsRef.current);
+    setSelectedPlaylistId(playlist.id);
+    setStatusLine(t("「{name}」从 YouTube 端上来了 {n} 杯。", { name, n: trackIds.length }));
+  };
+
+  /** Single videos go onto one 「YouTube 点歌」 page. */
+  const addYouTubeVideo = (item: YouTubeItem) => {
+    if (isGuest) return;
+    const page = playlistsRef.current.find((playlist) => playlist.youtube && !playlist.youtube.list);
+    const title = item.title || item.id;
+    if (page?.youtube?.items.some((existing) => existing.id === item.id)) {
+      setSelectedPlaylistId(page.id);
+      setStatusLine(t("《{title}》已经在「{name}」里了。", { title, name: page.name }));
+      return;
+    }
+    if (page?.youtube) {
+      const items = [...page.youtube.items, item];
+      playlistsRef.current = playlistsRef.current.map((playlist) =>
+        playlist.id === page.id
+          ? {
+              ...playlist,
+              trackIds: items.map((video) => youtubeTrackId(video.id)),
+              youtube: { ...page.youtube!, items, fetchedAt: Date.now() },
+            }
+          : playlist,
+      );
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(page.id);
+    } else {
+      const playlist: TavernPlaylist = {
+        id: `youtube-picks-${Date.now().toString(36)}`,
+        name: "YouTube 点歌", // translated where it is shown
+        mood: "YouTube",
+        trackIds: [youtubeTrackId(item.id)],
+        youtube: { url: "https://www.youtube.com/", items: [item], fetchedAt: Date.now() },
+      };
+      playlistsRef.current = [...playlistsRef.current, playlist];
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(playlist.id);
+    }
+    setStatusLine(t("《{title}》加进了 YouTube 点歌。", { title }));
+  };
+
+  const removeYouTubeVideo = (pageId: string, trackId: string) => {
+    if (isGuest) return;
+    setPlaylists((current) =>
+      current.map((playlist) =>
+        playlist.id === pageId && playlist.youtube
+          ? {
+              ...playlist,
+              trackIds: playlist.trackIds.filter((id) => id !== trackId),
+              youtube: {
+                ...playlist.youtube,
+                items: playlist.youtube.items.filter((item) => youtubeTrackId(item.id) !== trackId),
+              },
+            }
+          : playlist,
+      ),
+    );
+  };
+
   // ------------------------------------------------------------- 同席 room
   const hostPlaylistRef = useRef<string>();
   const room = useRoom(inviteKey, {
@@ -1293,9 +1566,17 @@ export function useTavernController() {
         ? spotifyEngine.isOn(spotifyUriNow)
           ? spotifyEngine.position()
           : 0
-        : (audioRef.current?.currentTime ?? 0),
+        : youtubeIdNow
+          ? youtubeEngine.isOn(youtubeIdNow)
+            ? youtubeEngine.position()
+            : 0
+          : (audioRef.current?.currentTime ?? 0),
     audible: () =>
-      spotifyUriNow ? spotifyEngine.isOn(spotifyUriNow) && spotifyEngine.playing : isPlaying,
+      spotifyUriNow
+        ? spotifyEngine.isOn(spotifyUriNow) && spotifyEngine.playing
+        : youtubeIdNow
+          ? youtubeEngine.isOn(youtubeIdNow) && youtubeEngine.rolling
+          : isPlaying,
     spotifyClientId: spotifyReady ? spotify.clientId : undefined,
     showProgress: (position, length) => {
       setProgress(position);
@@ -1372,6 +1653,13 @@ export function useTavernController() {
     spotifyLoading,
     linkSpotifyPlaylist,
     refreshSpotifyPlaylist,
+    youtubePanelOpen,
+    setYouTubePanelOpen,
+    youtubeRefreshId,
+    setYouTubeRefreshId,
+    linkYouTube,
+    addYouTubeVideo,
+    removeYouTubeVideo,
     isPlayable,
     currentTrackId,
     setIsPlaying,

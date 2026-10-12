@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   isSpotifyTrack,
+  isYouTubeTrack,
   type PlaybackMode,
   type TavernPlaylist,
   type TavernTrack,
 } from "../storage";
 import { spotifyEngine } from "../integrations/spotify/player";
 import { isSignedIn, setRoomClientId } from "../integrations/spotify/auth";
+import { youtubeEngine } from "../integrations/youtube/player";
 import {
   RoomConnection,
   fetchRoomInfo,
@@ -245,7 +247,9 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
         position: b.position(),
         duration: spotify
           ? spotifyEngine.durationMs / 1000 || track!.duration
-          : audio && Number.isFinite(audio.duration) && audio.duration > 0
+          : isYouTubeTrack(track)
+            ? youtubeEngine.durationS || track!.duration
+            : audio && Number.isFinite(audio.duration) && audio.duration > 0
             ? audio.duration
             : (track?.duration ?? 0),
         mode: b.playbackMode,
@@ -340,14 +344,17 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
       if (bridgeRef.current.isPlaying) publish("tick");
     }, 4000);
     // the host's Spotify really started / jumped: tell everyone where it is
-    const offStarted = spotifyEngine.on("started", () => publish("tick"));
-    const offSeeked = spotifyEngine.on("seeked", () => publish("seek"));
+    const offs = [
+      spotifyEngine.on("started", () => publish("tick")),
+      spotifyEngine.on("seeked", () => publish("seek")),
+      youtubeEngine.on("started", () => publish("tick")),
+      youtubeEngine.on("seeked", () => publish("seek")),
+    ];
     return () => {
       audio?.removeEventListener("seeked", onSeeked);
       audio?.removeEventListener("playing", onPlaying);
       window.clearInterval(heartbeat);
-      offStarted();
-      offSeeked();
+      offs.forEach((off) => off());
     };
   }, [role, hostReady, publish]);
 
@@ -409,6 +416,59 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     }
   };
 
+  /** Learned on this connection: how long YouTube takes to start / to jump (s). */
+  const youtubeSync = useRef({ lead: 0.6, seekLead: 0.2, lastStart: 0, lastSeek: 0, checkAt: 0, rev: -1 });
+
+  /** A YouTube video plays in this friend's own screen; line it up with the host. */
+  const syncYouTube = (conn: RoomConnection, snap: RoomSnapshot, track: TavernTrack) => {
+    const engine = youtubeEngine;
+    const s = youtubeSync.current;
+    const id = track.youtubeId ?? "";
+    const target = projectedPosition(snap, conn.now());
+    bridgeRef.current.showProgress(target, snap.duration || track.duration);
+    if (!id || engine.status === "error" || track.status !== "ready") return;
+    if (engine.isOn(id)) engine.poll(); // notice a jump on YouTube's own seek bar first
+    const now = performance.now();
+    // this friend just used YouTube's own controls: the request is on its way to
+    // the host, so don't pull the video back before the host's answer arrives
+    if (now - engine.userAt < 2500 && snap.at < conn.now() - (now - engine.userAt)) return;
+    const fresh = snap.rev !== s.rev;
+    s.rev = snap.rev;
+    if (!snap.isPlaying) {
+      if (engine.isOn(id) && (engine.playing || engine.starting)) engine.pause();
+      return;
+    }
+    if (!engine.isOn(id) || engine.finished) {
+      if (now - s.lastStart < 3000) return;
+      if (snap.duration > 0 && target > snap.duration - 1.5) return;
+      s.lastStart = now;
+      void engine.play(id, () => {
+        const snapNow = snapshotRef.current;
+        const live = snapNow && snapNow.trackId === snap.trackId ? snapNow : snap;
+        return projectedPosition(live, conn.now()) + youtubeSync.current.lead;
+      });
+      return;
+    }
+    if (engine.starting) return;
+    if (!engine.playing) {
+      if (now - s.lastStart < 3000) return;
+      s.lastStart = now;
+      engine.resume();
+      return;
+    }
+    const drift = engine.position() - target;
+    if (s.checkAt && now > s.checkAt) {
+      s.checkAt = 0;
+      if (Math.abs(drift) < 3) s.seekLead = Math.max(0, Math.min(2, s.seekLead - drift * 0.6));
+    }
+    // a new word from the host (someone jumped) may move us at once
+    if (Math.abs(drift) > 0.5 && (now - s.lastSeek > 3000 || (fresh && Math.abs(drift) > 2))) {
+      s.lastSeek = now;
+      s.checkAt = now + 1500;
+      engine.seek(target + s.seekLead);
+    }
+  };
+
   const syncAudio = useCallback(() => {
     const conn = connRef.current;
     const snap = snapshotRef.current;
@@ -417,6 +477,10 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     const track = bridgeRef.current.tracks.find((t) => t.id === snap.trackId);
     if (isSpotifyTrack(track)) {
       syncSpotify(conn, snap, track!);
+      return;
+    }
+    if (isYouTubeTrack(track)) {
+      syncYouTube(conn, snap, track!);
       return;
     }
     if (!audio) return;
@@ -452,6 +516,13 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
       s.lead = Math.max(0.2, Math.min(3, s.lead * 0.5 + latency * 0.5));
       window.setTimeout(syncAudio, 600);
     });
+    const offYouTube = youtubeEngine.on("started", ({ latency }) => {
+      // a long wait is an ad, not the connection: don't learn from it
+      if (latency === undefined || latency > 5) return;
+      const s = youtubeSync.current;
+      s.lead = Math.max(0.1, Math.min(3, s.lead * 0.5 + latency * 0.5));
+      window.setTimeout(syncAudio, 600);
+    });
     const audio = bridgeRef.current.audio();
     const onSeeked = () => {
       if (seekStart.current === null) return;
@@ -465,6 +536,7 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     return () => {
       window.clearInterval(timer);
       offStarted();
+      offYouTube();
       audio?.removeEventListener("loadedmetadata", syncAudio);
       audio?.removeEventListener("canplay", syncAudio);
       audio?.removeEventListener("seeked", onSeeked);

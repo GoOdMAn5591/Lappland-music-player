@@ -11,6 +11,7 @@ src/
   storage/         IndexedDB blobs, metadata and JSON validation
   assets/fonts/    vendored, unicode-range sliced OFL fonts
   integrations/spotify/  PKCE sign-in, Web API calls, Web Playback SDK device (see spotify.md)
+  integrations/youtube/  IFrame Player engine, link parsing, playlist reading (see youtube.md)
   multiplayer/     同席 room client (room.ts) and the useRoom hook (host + guest sync)
 server/            tavern-server.mjs: serves dist/, hosts the room, runs the cloudflared quick tunnel
 ```
@@ -29,7 +30,7 @@ server/            tavern-server.mjs: serves dist/, hosts the room, runs the clo
 
 `PlayerState` contains currentTrack (catalog ID), sourceType, isPlaying, position, duration, volume, queue, repeatMode and shuffle. `useSyncExternalStore` is the React boundary. Legacy library repeat modes map to these fields. Metadata stays in the catalog.
 
-`AudioSource` defines load/play/pause/seek/setVolume/dispose and capabilities. `LocalAudioSource` accepts only object URLs or the room's relayed audio. Spotify songs are played by `spotifyEngine` (Web Playback SDK) under the listener's own account. The controller switches by `track.source`: it stops the other source first, so local and Spotify audio never overlap.
+`AudioSource` defines load/play/pause/seek/setVolume/dispose and capabilities. `LocalAudioSource` accepts only object URLs or the room's relayed audio. Spotify songs are played by `spotifyEngine` (Web Playback SDK) under the listener's own account, YouTube videos by `youtubeEngine` in the visible `YouTubeScreen`. The controller switches by `track.source`: it stops the other sources first, so they never overlap.
 
 ## Storage
 

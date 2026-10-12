@@ -638,8 +638,6 @@ export const EN: Record<string, string> = {
     "This one's from Spotify: connect your Spotify in “Spotify playlists” first.",
   "Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。":
     "A Spotify page keeps Spotify's order; reorder it in Spotify.",
-  "Spotify 的歌只待在它自己的歌单页里。":
-    "Spotify songs stay on their own playlist page.",
   "Spotify 在别处被暂停或换了设备，酒馆这边也先停下。":
     "Spotify was paused or moved to another device, so the tavern paused too.",
   "「{name}」从 Spotify 端上来了 {n} 杯。":
@@ -686,4 +684,124 @@ export const EN: Record<string, string> = {
     "Spotify couldn't start playing. Try again.",
   "浏览器拦住了小窗口：点这里打开 Spotify 登录":
     "The browser blocked the small window: click here to open Spotify's sign-in",
+
+  // ---------------------------------------------------------------- YouTube
+  "正在读取 YouTube 歌单……":
+    "Reading the YouTube playlist…",
+  "读不到这个歌单：它可能是私密的，或者链接不完整。":
+    "Couldn't read this playlist: it may be private, or the link is incomplete.",
+  "正在给 {n} 个视频写上名字……":
+    "Labelling {n} videos…",
+  "YouTube 歌单":
+    "YouTube playlists",
+  "YouTube 播放器没加载出来：检查网络，或暂时关掉拦截广告的扩展。":
+    "YouTube's player didn't load: check your connection, or pause ad-blocking extensions.",
+  "正在查看这个视频……":
+    "Looking at this video…",
+  "这个视频已被删除，或者是私密的。":
+    "This video was removed or is private.",
+  "这个视频的作者不允许在别的网站播放，换一个吧。":
+    "This video's owner doesn't allow it to play on other sites. Pick another.",
+  "认不出这个链接：复制 YouTube 地址栏里的网址，或歌单 / 视频的「分享」链接。":
+    "That link wasn't recognized. Copy the address from YouTube's address bar, or the playlist / video “Share” link.",
+  "把 YouTube 歌单放上吧台":
+    "Put YouTube playlists on the bar",
+  "不用账号，同席的朋友也不用：每个人在自己的浏览器里看，酒馆把大家对齐到同一秒。":
+    "No account needed, for you or your friends: everyone watches in their own browser and the tavern keeps everyone on the same second.",
+  "粘贴 YouTube 歌单或视频链接":
+    "Paste a YouTube playlist or video link",
+  "YouTube 链接":
+    "YouTube link",
+  "酒单里的 YouTube 页":
+    "YouTube pages on the menu",
+  "资料已过期，需要重新读取":
+    "Expired — needs reading again",
+  "{n} 个视频 · {when}":
+    "{n} videos · {when}",
+  "今天读取":
+    "read today",
+  "{d} 天前读取":
+    "read {d} days ago",
+  "去看看":
+    "Show",
+  "吧台右下角会出现一块 YouTube 小屏幕：YouTube 规定播放器必须看得见，不能只放声音。":
+    "A small YouTube screen appears in the corner of the bar: YouTube requires its player to stay visible, so it can't be sound only.",
+  "YouTube 可能会插播广告（每个人各自的），广告播完酒馆会自动追上进度。":
+    "YouTube may show ads (each person their own); after an ad the tavern catches you up automatically.",
+  "有些视频的作者不允许在别的网站播放，轮到它时会自动跳过。":
+    "Some owners don't allow their videos on other sites; those are skipped automatically.",
+  "一个歌单最多读前 {n} 个视频。YouTube 规定读到的资料最多保存 30 天，过期后点「刷新」重新读取。":
+    "Up to the first {n} videos of a playlist are read. YouTube lets apps keep what they read for 30 days at most; after that, press “Refresh” to read it again.",
+  "视频由 YouTube 提供，直接在你的浏览器里播放，酒馆不下载、不转播。使用即表示同意":
+    "Videos are provided by YouTube and play straight in your browser; the tavern never downloads or relays them. By using them you agree to the",
+  "YouTube 服务条款":
+    "YouTube Terms of Service",
+  "，并适用":
+    "; the",
+  "Google 隐私权政策":
+    "Google Privacy Policy",
+  "。":
+    " applies.",
+  "可以粘贴歌单链接（含 list=），也可以粘贴单个视频，单个视频会放进「YouTube 点歌」页。":
+    "Paste a playlist link (with list=) or a single video; single videos go onto the “YouTube Picks” page.",
+  "没有声音？点一下画面里的播放键。":
+    "No sound? Press play inside the video.",
+  "YouTube 屏幕":
+    "YouTube screen",
+  "在 YouTube 打开":
+    "Open on YouTube",
+  "缩小屏幕":
+    "Smaller screen",
+  "放大屏幕":
+    "Bigger screen",
+  "撕下「{name}」？YouTube 上的视频不受影响。":
+    "Tear out “{name}”? Nothing changes on YouTube.",
+  "在 YouTube 打开这个歌单":
+    "Open this playlist on YouTube",
+  "从 YouTube 重新读取":
+    "Read again from YouTube",
+  "从 YouTube 刷新":
+    "Refresh from YouTube",
+  "这页的 YouTube 资料过期了":
+    "This page's YouTube data expired",
+  "这页还没有能播放的视频":
+    "No playable videos on this page yet",
+  "等房主那边放上视频。":
+    "Waiting for the host to add videos.",
+  "YouTube 规定读到的资料最多保存 30 天：点这里重新读取。":
+    "YouTube lets apps keep what they read for 30 days at most: click to read it again.",
+  "点这里粘贴 YouTube 歌单或视频链接。":
+    "Click to paste a YouTube playlist or video link.",
+  "不能在别的网站播放":
+    "can't play on other sites",
+  "在 YouTube 打开这个视频":
+    "Open this video on YouTube",
+  "从点歌单里拿掉":
+    "Remove from YouTube Picks",
+  "拿掉":
+    "Remove",
+  "不用账号，朋友也能一起看":
+    "No account needed, friends can watch along",
+  "YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。":
+    "A YouTube playlist page keeps YouTube's order; reorder it on YouTube.",
+  "Spotify 和 YouTube 的歌只待在它们自己的歌单页里。":
+    "Spotify and YouTube songs stay on their own pages.",
+  "这个 YouTube 视频已被删除或设为私密，跳过这一杯。":
+    "This YouTube video was removed or made private; skipping it.",
+  "这个视频的作者不允许在别的网站播放，跳过这一杯。":
+    "This video's owner doesn't allow it on other sites; skipping it.",
+  "YouTube 播放出错了，跳过这一杯。":
+    "YouTube hit a playback error; skipping this one.",
+  "「{name}」已从 YouTube 重新读取：{n} 杯。":
+    "“{name}” read again from YouTube: {n} glasses.",
+  "「{name}」从 YouTube 端上来了 {n} 杯。":
+    "“{name}”: {n} glasses poured from YouTube.",
+  "《{title}》已经在「{name}」里了。":
+    "“{title}” is already on “{name}”.",
+  "YouTube 点歌":
+    "YouTube Picks",
+  "《{title}》加进了 YouTube 点歌。":
+    "“{title}” added to YouTube Picks.",
+  "YouTube 视频也不经过你的电脑：朋友什么账号都不用，各自的浏览器里会出现同一块小屏幕。":
+    "YouTube videos don't go through your computer either: friends need no account, and the same little screen appears in each of their browsers.",
 };

@@ -893,10 +893,77 @@ async function serveStatic(req, res, url) {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// YouTube titles for the host's menu. Browsers can't read YouTube's public
+// oEmbed endpoint directly (no CORS), so the host's page asks this server.
+// Only this computer's own page may use it (custom header + local check), so
+// it can't be used as an open proxy.
+
+const OEMBED = process.env.TAVERN_YT_OEMBED || "https://www.youtube.com/oembed";
+const oembedCache = new Map();
+
+async function oembed(target) {
+  if (oembedCache.has(target)) return oembedCache.get(target);
+  let result;
+  try {
+    const response = await fetch(`${OEMBED}?format=json&url=${encodeURIComponent(target)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (response.status === 404 || response.status === 400) result = null; // removed / private
+    else if (response.status === 401 || response.status === 403)
+      result = { title: "", author: "", blocked: true }; // can't be embedded
+    else if (response.ok) {
+      const body = await response.json();
+      result = {
+        title: String(body.title || "").slice(0, 200),
+        author: String(body.author_name || "").slice(0, 120),
+      };
+    }
+  } catch {
+    result = undefined; // offline: leave untitled, try again next time
+  }
+  if (result !== undefined) {
+    if (oembedCache.size > 5000) oembedCache.clear();
+    oembedCache.set(target, result);
+  }
+  return result;
+}
+
+async function handleYouTubeMeta(req, res, url) {
+  if (!isLocal(req) || req.headers["x-tavern"] !== "1") return send(res, 403, { error: "local only" });
+  const ids = [
+    ...new Set(
+      String(url.searchParams.get("ids") || "")
+        .split(",")
+        .filter((id) => /^[A-Za-z0-9_-]{11}$/.test(id)),
+    ),
+  ].slice(0, 50);
+  const list = url.searchParams.get("list");
+  const videos = {};
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(6, ids.length) }, async () => {
+      while (next < ids.length) {
+        const id = ids[next++];
+        const meta = await oembed(`https://www.youtube.com/watch?v=${id}`);
+        if (meta !== undefined) videos[id] = meta;
+      }
+    }),
+  );
+  const body = { videos };
+  if (list && /^[A-Za-z0-9_-]{10,64}$/.test(list)) {
+    const meta = await oembed(`https://www.youtube.com/playlist?list=${list}`);
+    if (meta !== undefined) body.list = meta && { title: meta.title, author: meta.author };
+  }
+  send(res, 200, body);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://local");
   try {
-    if (url.pathname.startsWith("/room/")) await handleRoom(req, res, url);
+    if (url.pathname === "/tavern/youtube-meta" && req.method === "GET")
+      await handleYouTubeMeta(req, res, url);
+    else if (url.pathname.startsWith("/room/")) await handleRoom(req, res, url);
     else await serveStatic(req, res, url);
   } catch (error) {
     if (!res.headersSent) send(res, error.status || 500, { error: error.status ? error.message : "server" });

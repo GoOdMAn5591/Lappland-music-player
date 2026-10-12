@@ -6,6 +6,7 @@ import {
   FileDown,
   FileUp,
   ListMusic,
+  MonitorPlay,
   Music2,
   Pause,
   Play,
@@ -238,6 +239,13 @@ function MoreMenu({
                   ? t("点这里连接 Spotify")
                   : t("把你的 Spotify 歌单放上吧台"),
           )}
+          {!model.isGuest &&
+            item(
+              t("YouTube 歌单"),
+              <MonitorPlay size={17} />,
+              () => model.setYouTubePanelOpen(true),
+              t("不用账号，朋友也能一起看"),
+            )}
           {item(
             t("同席 · 一起听"),
             <Users size={17} />,
@@ -566,7 +574,7 @@ export function Hud({
               )}
               {currentTrack?.status === "ready" &&
                 !currentTrack.stored &&
-                !isSpotifyTrack(currentTrack) &&
+                !currentTrack.source &&
                 !isGuest && (
                 <span className="warn">{t("仅本次可播")}</span>
               )}

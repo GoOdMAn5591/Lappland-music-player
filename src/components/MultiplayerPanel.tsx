@@ -183,6 +183,7 @@ export function MultiplayerPanel({
             <li>
               {t("Spotify 的歌不经过你的电脑：朋友用自己的 Spotify Premium 登录（要先加进你应用的用户名单），酒馆把大家对齐到同一秒。")}
             </li>
+            <li>{t("YouTube 视频也不经过你的电脑：朋友什么账号都不用，各自的浏览器里会出现同一块小屏幕。")}</li>
           </ul>
           <form
             className="room-form"
