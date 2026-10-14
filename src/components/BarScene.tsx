@@ -22,11 +22,15 @@ interface Props {
   onStatus: (ready: "loading" | "ready" | "failed") => void;
 }
 
+/** Holding a glass this long (touch) picks it up to move it. */
+const LONG_PRESS_MS = 380;
+
 interface PressState {
   id: string;
   pointerId: number;
   x: number;
   y: number;
+  /** When the finger / button went down (event clock). */
   time: number;
   dragging: boolean;
   target?: string;
@@ -286,11 +290,11 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
-      time: performance.now(),
+      time: event.timeStamp,
       dragging: false,
     };
     if (event.pointerType === "touch") {
-      press.current.timer = window.setTimeout(() => startDrag(), 380);
+      press.current.timer = window.setTimeout(() => startDrag(), LONG_PRESS_MS);
     }
     // Follow the pointer on the window: the glass under it can move (or be
     // re-sorted) mid-drag, and the drop must land wherever the button is released.
@@ -343,6 +347,18 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     if (!state || state.pointerId !== event.pointerId) return;
     window.clearTimeout(state.timer);
     press.current = undefined;
+    // A busy page can run the long-press timer late, after the finger already
+    // lifted: judge by when it lifted. A short, still touch is a tap after all.
+    const tapAfterAll =
+      state.dragging &&
+      event.pointerType === "touch" &&
+      event.timeStamp - state.time < LONG_PRESS_MS &&
+      Math.hypot(event.clientX - state.x, event.clientY - state.y) < 8;
+    if (tapAfterAll) {
+      sceneRef.current?.endDrag();
+      setDragId(undefined);
+      return;
+    }
     if (state.dragging) {
       suppressClick.current = true;
       sceneRef.current?.endDrag();
