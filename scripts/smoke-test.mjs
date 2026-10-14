@@ -1,15 +1,18 @@
-import { expect } from "@playwright/test";
+import { expect as baseExpect } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { launchBrowser } from "./browser.mjs";
+
+// Without a graphics card (CI) the 3D bar draws in software: allow for slow steps.
+const expect = baseExpect.configure({ timeout: 30_000 });
 
 // End-to-end pass over the everyday flow: import, play, pour the next glass,
 // menu sections, bartender's notes, reorder, JSON round trip and phone layout.
 const APP_URL = process.env.APP_URL ?? "http://127.0.0.1:5173/";
 const outputDir = path.resolve("test-results");
 
-function createWavBuffer(frequency, seconds = 3, sampleRate = 22050) {
+function createWavBuffer(frequency, seconds = 30, sampleRate = 22050) {
   const samples = Math.floor(sampleRate * seconds);
   const buffer = Buffer.alloc(44 + samples * 2);
   buffer.write("RIFF", 0);
@@ -64,17 +67,17 @@ try {
   await expect(page.locator(".tavern-app")).toHaveAttribute(
     "data-scene",
     "ready",
-    { timeout: 20000 },
+    { timeout: 60_000 },
   );
 
   await page
     .locator('input[type="file"][accept*="audio"]')
     .setInputFiles(audioPaths);
   await expect(page.locator(".status-toast")).toContainText(/已添加 3 只酒杯/, {
-    timeout: 15000,
+    timeout: 90_000,
   });
   await expect(page.locator(".glass-hotspot")).toHaveCount(3, {
-    timeout: 10000,
+    timeout: 30_000,
   });
 
   // the glass to the right of the front one is the next drink

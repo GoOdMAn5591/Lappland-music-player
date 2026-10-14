@@ -1,7 +1,10 @@
-import { expect } from "@playwright/test";
+import { expect as baseExpect } from "@playwright/test";
 import { launchBrowser } from "./browser.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+// Without a graphics card (CI) the 3D bar draws in software: allow for slow steps.
+const expect = baseExpect.configure({ timeout: 30_000 });
 
 const url = process.env.APP_URL ?? "http://127.0.0.1:5173/";
 const browser = await launchBrowser();

@@ -40,6 +40,8 @@ export interface SceneOptions {
 const SILENCE: AudioBands = { bass: 0, mid: 0, high: 0, level: 0 };
 /** Frame cap in performance mode. */
 const SAVER_FPS = 20;
+/** Without a graphics card the browser draws in software: keep it to a gentle pace. */
+const SOFTWARE_FPS = 15;
 /** After the pointer moves over an unfocused window, keep drawing this long (ms). */
 const SAVER_WAKE_MS = 4000;
 
@@ -79,6 +81,12 @@ export class TavernScene {
   private frameTimes: number[] = [];
   private qualityLocked = false;
   private saver = false;
+  /** No usable graphics card (SwiftShader, llvmpipe…): low quality, fewer frames. */
+  private software = false;
+  private sampleSince = 0;
+  /** Behind the closed entrance door: draw one frame (to warm up), then wait. */
+  private held = false;
+  private drawn = false;
   private sleeping = false;
   private wokeAt = 0;
   private beforeSaver?: { quality: Quality; locked: boolean };
@@ -109,6 +117,13 @@ export class TavernScene {
     this.renderer.domElement.setAttribute("aria-hidden", "true");
     this.renderer.domElement.className = "tavern-canvas";
     host.appendChild(this.renderer.domElement);
+    // (visual tests step frames by hand and keep the full look)
+    this.software = !options.manual && isSoftwareRenderer(this.renderer.getContext());
+    if (this.software && !options.quality) {
+      // "auto" on a machine without a graphics card: start (and stay) light
+      this.quality = "low";
+      this.qualityLocked = true;
+    }
 
     this.envTexture = makeEnvironmentTexture();
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -174,6 +189,7 @@ export class TavernScene {
     this.scene.add(this.carousel.group);
 
     this.post = new PostFX(this.renderer, this.quality);
+    this.post.skipBloom = this.software;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
     this.resize();
@@ -203,9 +219,16 @@ export class TavernScene {
       this.frameTimes = [];
       this.setQuality(this.beforeSaver.quality);
     }
-    this.post.skipBloom = on;
+    this.post.skipBloom = on || this.software;
     this.resize();
     this.wake();
+  }
+
+  /** Hold the bar while something covers it completely (the entrance door). */
+  setHold(on: boolean) {
+    if (on === this.held) return;
+    this.held = on;
+    if (!on) this.wake();
   }
 
   /** Resume drawing after the window regains focus or the pointer moves over it. */
@@ -232,7 +255,7 @@ export class TavernScene {
   /** Device pixel ratio capped by a pixel budget so 4K / HiDPI screens stay smooth. */
   private pixelRatio() {
     const dpr = window.devicePixelRatio || 1;
-    const budget = this.saver
+    const budget = this.saver || this.software
       ? 0.55e6
       : this.quality === "high"
         ? 3.2e6
@@ -240,9 +263,10 @@ export class TavernScene {
           ? 2.0e6
           : 1.1e6;
     const cap = Math.sqrt(budget / Math.max(1, this.width * this.height));
+    const light = this.saver || this.software;
     return Math.max(
-      this.saver ? 0.45 : 0.6,
-      Math.min(dpr, this.saver ? 1 : this.quality === "high" ? 2 : 1.5, cap),
+      light ? 0.45 : 0.6,
+      Math.min(dpr, light ? 1 : this.quality === "high" ? 2 : 1.5, cap),
     );
   }
 
@@ -257,9 +281,10 @@ export class TavernScene {
       return;
     }
     if (preference === "auto") {
-      this.qualityLocked = false;
+      this.qualityLocked = this.software;
       this.frameTimes = [];
-      this.setQuality("high");
+      this.sampleSince = 0;
+      this.setQuality(this.software ? "low" : "high");
     } else {
       this.qualityLocked = true;
       this.setQuality(preference);
@@ -296,7 +321,7 @@ export class TavernScene {
     this.quality = quality;
     this.post.dispose();
     this.post = new PostFX(this.renderer, quality);
-    this.post.skipBloom = this.saver;
+    this.post.skipBloom = this.saver || this.software;
     this.resize();
     this.options.onQualityChange?.(quality);
   }
@@ -459,6 +484,10 @@ export class TavernScene {
 
   private tick = (now: number) => {
     if (this.disposed) return;
+    if (this.held && this.drawn) {
+      this.sleeping = true;
+      return;
+    }
     if (
       this.saver &&
       (document.hidden ||
@@ -470,10 +499,12 @@ export class TavernScene {
     }
     this.frame = requestAnimationFrame(this.tick);
     const elapsed = (now - this.last) / 1000;
-    if (this.saver && elapsed < 1 / SAVER_FPS - 0.004) return;
+    const cap = this.saver ? SAVER_FPS : this.software ? SOFTWARE_FPS : 0;
+    if (cap && elapsed < 1 / cap - 0.004) return;
     this.last = now;
     if (document.hidden) return;
     this.step(Math.min(this.saver ? 0.1 : 0.05, elapsed), true);
+    this.drawn = true;
   };
 
   private step(dt: number, render: boolean) {
@@ -559,8 +590,12 @@ export class TavernScene {
 
   private monitorPerformance(dt: number) {
     if (this.qualityLocked || this.time < 1.5) return;
+    const now = performance.now();
+    if (!this.frameTimes.length) this.sampleSince = now;
     this.frameTimes.push(dt);
-    if (this.frameTimes.length < 90) return;
+    // decide after 90 frames, or sooner when frames are slow (a struggling machine)
+    if (this.frameTimes.length < 90 && !(this.frameTimes.length >= 8 && now - this.sampleSince > 2000))
+      return;
     const avg =
       this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
     this.frameTimes = [];
@@ -641,5 +676,18 @@ export class TavernScene {
     });
     this.renderer.dispose();
     this.renderer.domElement.remove();
+  }
+}
+
+/** True when WebGL runs on the CPU (no graphics card, or a blocked driver). */
+function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext) {
+  try {
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = String(
+      gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "",
+    );
+    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+  } catch {
+    return false;
   }
 }

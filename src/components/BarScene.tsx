@@ -162,6 +162,12 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     sceneRef.current?.setPowerSaver(powerSaver);
   }, [sceneReady, powerSaver]);
 
+  // behind the closed entrance door nobody sees the bar: don't spend frames on it
+  const doorClosed = model.entrancePhase === "closed";
+  useEffect(() => {
+    sceneRef.current?.setHold(doorClosed);
+  }, [sceneReady, doorClosed]);
+
   useEffect(() => {
     sceneRef.current?.setProgress(progress / Math.max(1, progressMax));
   }, [sceneReady, progress, progressMax]);
@@ -179,6 +185,8 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
   useEffect(() => {
     sceneRef.current?.updateRig(portrait.rig);
   }, [sceneReady, portrait.rig]);
+
+  const placedRef = useRef(new WeakMap<HTMLElement, number[]>());
 
   // Newly mounted hotspots are positioned immediately from the last frame.
   useLayoutEffect(() => {
@@ -202,10 +210,27 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     for (const glass of info.glasses) {
       const el = hotRefs.current.get(glass.id);
       if (!el) continue;
-      const h = Math.max(36, glass.bottom - glass.top + 18);
-      el.style.transform = `translate3d(${(glass.x - glass.width / 2).toFixed(1)}px, ${(glass.top - 10).toFixed(1)}px, 0)`;
-      el.style.width = `${glass.width.toFixed(1)}px`;
-      el.style.height = `${h.toFixed(1)}px`;
+      const rect = [
+        glass.x - glass.width / 2,
+        glass.top - 10,
+        glass.width,
+        Math.max(36, glass.bottom - glass.top + 18),
+      ];
+      // The glasses sway a little all the time. The invisible click targets only
+      // follow real moves, so they hold still under the pointer (and for tests).
+      // While a glass is pressed or dragged they follow every frame.
+      const last = placedRef.current.get(el);
+      if (
+        !press.current &&
+        last &&
+        el.dataset.offset === String(glass.offset) &&
+        rect.every((value, i) => Math.abs(value - last[i]) < 3)
+      )
+        continue;
+      placedRef.current.set(el, rect);
+      el.style.transform = `translate3d(${rect[0].toFixed(1)}px, ${rect[1].toFixed(1)}px, 0)`;
+      el.style.width = `${rect[2].toFixed(1)}px`;
+      el.style.height = `${rect[3].toFixed(1)}px`;
       el.style.zIndex = String(100 - Math.round(Math.abs(glass.offset) * 10));
       el.dataset.offset = String(glass.offset);
     }
