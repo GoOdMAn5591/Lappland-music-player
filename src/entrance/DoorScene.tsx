@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Object3D, Material } from "three";
 import { t } from "../i18n";
+import { finishFrame, softwareGraphics } from "../scene3d/software";
 
 export function DoorScene({ opening }: { opening: boolean }) {
   const host = useRef<HTMLDivElement>(null);
@@ -15,8 +16,10 @@ export function DoorScene({ opening }: { opening: boolean }) {
     void (async () => {
       const T = await import("three");
       if (cancelled || !host.current) return;
-      const renderer = new T.WebGLRenderer({ alpha: true, antialias: true });
-      renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+      // without a graphics card: fewer pixels, no smoothing, and only the frames that matter
+      const software = softwareGraphics();
+      const renderer = new T.WebGLRenderer({ alpha: true, antialias: !software });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, software ? 0.5 : 1.5));
       renderer.setClearColor(0x000000, 0);
       renderer.domElement.setAttribute("aria-label", t("酒馆木门场景"));
       host.current.append(renderer.domElement);
@@ -186,7 +189,10 @@ export function DoorScene({ opening }: { opening: boolean }) {
       const dust = new T.Points(dustGeometry, dustMaterial);
       scene.add(dust);
       let baseZ = 12,
-        frame = 0;
+        frame = 0,
+        dirty = true,
+        drawnAt = -Infinity,
+        cost = 0;
       const reduced = matchMedia("(prefers-reduced-motion: reduce)");
       const resize = new ResizeObserver(([entry]) => {
         const { width, height } = entry.contentRect;
@@ -195,10 +201,18 @@ export function DoorScene({ opening }: { opening: boolean }) {
         camera.updateProjectionMatrix();
         baseZ = Math.max(11.5, 9.1 / camera.aspect);
         renderer.setSize(width, height);
+        dirty = true;
       });
       resize.observe(host.current);
       const draw = (now: number) => {
-        if (!document.hidden) {
+        // software: the closed door is drawn once; the opening door at a pace
+        // that leaves the processor free (frames cost ~cost ms each)
+        const due =
+          !software ||
+          dirty ||
+          (started.current !== undefined && now - drawnAt >= Math.max(120, cost * 3));
+        if (!document.hidden && due) {
+          const begin = performance.now();
           const progress =
             started.current === undefined
               ? 0
@@ -216,6 +230,12 @@ export function DoorScene({ opening }: { opening: boolean }) {
             dust.rotation.z = Math.sin(now * 0.00007) * 0.07;
           interior.intensity = 14 + ease * 23;
           renderer.render(scene, camera);
+          if (software) {
+            finishFrame(renderer.getContext());
+            cost = performance.now() - begin;
+          }
+          drawnAt = now;
+          dirty = false;
         }
         frame = requestAnimationFrame(draw);
       };

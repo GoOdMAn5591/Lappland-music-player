@@ -173,7 +173,10 @@ try {
   await expect
     .poll(() => page.locator("audio").evaluate((a) => a.currentTime))
     .toBeGreaterThan(0.05);
+  // the open menu covers the bar: close it to reach the pause button
+  await page.getByLabel("关闭酒单", { exact: true }).click();
   await page.getByLabel("暂停", { exact: true }).click();
+  await page.getByLabel("打开酒单", { exact: true }).click();
   await page.locator(".drink-row").first().getByLabel("编辑歌曲信息").click();
   await page.getByLabel("饮品别名", { exact: true }).fill("琥珀夜航");
   await page.getByLabel("口味标签", { exact: true }).fill("午夜, 柔和");
@@ -197,6 +200,7 @@ try {
   expect(
     stored.playlists.find((p) => p.name === "持久珍藏").trackIds,
   ).toContain(edited.id);
+  await page.getByLabel("关闭酒单", { exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByLabel("导出菜单配置", { exact: true }).click();
   const download = await downloadPromise;
@@ -264,7 +268,9 @@ try {
   await expect(page.locator(".drink-row")).toHaveCount(3);
   expect(await page.locator("audio").evaluate((a) => a.paused)).toBe(true);
   await page.screenshot({ path: path.join(output, "persistent-mobile.png") });
-  await page.getByLabel("本地酒窖与入场设置", { exact: true }).click();
+  // on a phone the cellar lives in the "more" menu
+  await page.getByRole("button", { name: "更多选项", exact: true }).click();
+  await page.getByRole("menuitem", { name: /本地酒窖/ }).click();
   await page.screenshot({ path: path.join(output, "cellar-mobile.png") });
   expect(
     await page.evaluate(

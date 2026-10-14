@@ -824,7 +824,13 @@ export class GlassCarousel {
     const limit = CAROUSEL.step * CAROUSEL.maxSide;
     const clamped = THREE.MathUtils.clamp(theta, -limit, limit);
     glass.dragTheta = clamped;
-    const slot = Math.round(clamped / CAROUSEL.step);
+    let slot = Math.round(clamped / CAROUSEL.step);
+    // past the last glass (a short menu): drop next to the nearest one instead of nowhere
+    let nearest = Infinity;
+    for (const other of this.glasses.values())
+      if (!other.removing && Math.abs(other.target - slot) < Math.abs(nearest - slot))
+        nearest = other.target;
+    if (Number.isFinite(nearest)) slot = Math.round(nearest);
     const r = BAR.glassRing;
     const t = slot * CAROUSEL.step;
     this.dropMarker.position.set(
@@ -835,7 +841,7 @@ export class GlassCarousel {
     this.dropMarker.scale.setScalar(GLASS_SCALE * 1.1);
     let targetId: string | undefined;
     for (const [id, other] of this.glasses)
-      if (!other.removing && other.target === slot) targetId = id;
+      if (!other.removing && Math.round(other.target) === slot) targetId = id;
     return { slot, targetId };
   }
 

@@ -70,6 +70,7 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
   const press = useRef<PressState>();
   const suppressClick = useRef(false);
   const swipe = useRef<{ x: number; y: number; id: number }>();
+  const endPress = useRef<() => void>();
   const hoverRef = useRef<string>();
   hoverRef.current = hoverId;
 
@@ -279,6 +280,7 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
   ) => {
     if (event.button !== 0 || id === EMPTY_RECIPE.id) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    endPress.current?.();
     press.current = {
       id,
       pointerId: event.pointerId,
@@ -290,6 +292,23 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     if (event.pointerType === "touch") {
       press.current.timer = window.setTimeout(() => startDrag(), 380);
     }
+    // Follow the pointer on the window: the glass under it can move (or be
+    // re-sorted) mid-drag, and the drop must land wherever the button is released.
+    const move = (e: PointerEvent) => pointerHandlers.current.move(e);
+    const up = (e: PointerEvent) => {
+      if (e.pointerId !== press.current?.pointerId) return;
+      endPress.current?.();
+      pointerHandlers.current.up(e);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    endPress.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      endPress.current = undefined;
+    };
   };
 
   const startDrag = () => {
@@ -301,7 +320,7 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     setHover(undefined);
   };
 
-  const onGlassPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const onGlassPointerMove = (event: PointerEvent) => {
     const state = press.current;
     if (!state || state.pointerId !== event.pointerId) return;
     const moved = Math.hypot(event.clientX - state.x, event.clientY - state.y);
@@ -319,7 +338,7 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
     }
   };
 
-  const onGlassPointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const onGlassPointerUp = (event: PointerEvent) => {
     const state = press.current;
     if (!state || state.pointerId !== event.pointerId) return;
     window.clearTimeout(state.timer);
@@ -343,6 +362,11 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
       }
     }
   };
+
+  // the window listeners always call this render's handlers
+  const pointerHandlers = useRef({ move: onGlassPointerMove, up: onGlassPointerUp });
+  pointerHandlers.current = { move: onGlassPointerMove, up: onGlassPointerUp };
+  useEffect(() => () => endPress.current?.(), []);
 
   const activate = (id: string) => {
     if (suppressClick.current) {
@@ -419,9 +443,6 @@ export function BarScene({ model, quality, onFrame, onStatus }: Props) {
               onFocus={() => setHover(id)}
               onBlur={() => setHover(undefined)}
               onPointerDown={(event) => onGlassPointerDown(id, event)}
-              onPointerMove={onGlassPointerMove}
-              onPointerUp={onGlassPointerUp}
-              onPointerCancel={onGlassPointerUp}
               onClick={() => activate(id)}
               onContextMenu={(event) => event.preventDefault()}
             />

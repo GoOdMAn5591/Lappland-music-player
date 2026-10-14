@@ -10,6 +10,7 @@ import {
 } from "./glasses";
 import { LapplandCharacter } from "./lappland";
 import { BAR } from "./layout";
+import { finishFrame, isSoftwareRenderer } from "./software";
 import { PostFX, type Quality } from "./post";
 import { createRoom } from "./room";
 import { makeCoasterTexture, makeEnvironmentTexture } from "./textures";
@@ -42,6 +43,13 @@ const SILENCE: AudioBands = { bass: 0, mid: 0, high: 0, level: 0 };
 const SAVER_FPS = 20;
 /** Without a graphics card the browser draws in software: keep it to a gentle pace. */
 const SOFTWARE_FPS = 15;
+/**
+ * In software a frame can take a second. Leave the processor this many times
+ * a frame's cost between frames, so menus, imports and music stay responsive.
+ */
+const SOFTWARE_SPACING = 3;
+/** …but never wait longer than this between frames (s). */
+const SOFTWARE_MAX_GAP = 2.5;
 /** After the pointer moves over an unfocused window, keep drawing this long (ms). */
 const SAVER_WAKE_MS = 4000;
 
@@ -83,6 +91,10 @@ export class TavernScene {
   private saver = false;
   /** No usable graphics card (SwiftShader, llvmpipe…): low quality, fewer frames. */
   private software = false;
+  /** Software: what one frame costs (s), measured every so often. */
+  private frameCost = 0;
+  private untilMeasure = 1;
+  private measured = 0;
   private sampleSince = 0;
   /** Behind the closed entrance door: draw one frame (to warm up), then wait. */
   private held = false;
@@ -255,7 +267,9 @@ export class TavernScene {
   /** Device pixel ratio capped by a pixel budget so 4K / HiDPI screens stay smooth. */
   private pixelRatio() {
     const dpr = window.devicePixelRatio || 1;
-    const budget = this.saver || this.software
+    const budget = this.software
+      ? 0.12e6
+      : this.saver
       ? 0.55e6
       : this.quality === "high"
         ? 3.2e6
@@ -265,7 +279,7 @@ export class TavernScene {
     const cap = Math.sqrt(budget / Math.max(1, this.width * this.height));
     const light = this.saver || this.software;
     return Math.max(
-      light ? 0.45 : 0.6,
+      this.software ? 0.3 : light ? 0.45 : 0.6,
       Math.min(dpr, light ? 1 : this.quality === "high" ? 2 : 1.5, cap),
     );
   }
@@ -501,11 +515,29 @@ export class TavernScene {
     const elapsed = (now - this.last) / 1000;
     const cap = this.saver ? SAVER_FPS : this.software ? SOFTWARE_FPS : 0;
     if (cap && elapsed < 1 / cap - 0.004) return;
+    if (this.software && elapsed < Math.min(SOFTWARE_MAX_GAP, this.frameCost * SOFTWARE_SPACING)) return;
     this.last = now;
     if (document.hidden) return;
-    this.step(Math.min(this.saver ? 0.1 : 0.05, elapsed), true);
+    if (this.software) this.softwareFrame(elapsed);
+    else this.step(Math.min(this.saver ? 0.1 : 0.05, elapsed), true);
     this.drawn = true;
   };
+
+  /**
+   * One frame in software: catch the motion up in small steps (drawing only the
+   * last), and now and then wait for the frame to finish to learn its cost.
+   */
+  private softwareFrame(elapsed: number) {
+    const start = performance.now();
+    const total = Math.min(elapsed, SOFTWARE_MAX_GAP);
+    const steps = Math.max(1, Math.ceil(total / 0.05));
+    for (let i = 0; i < steps; i++) this.step(total / steps, i === steps - 1);
+    if (--this.untilMeasure > 0) return;
+    // the first frames also compile shaders: look again soon, then rarely
+    this.untilMeasure = ++this.measured < 3 ? 2 : 20;
+    finishFrame(this.renderer.getContext());
+    this.frameCost = (performance.now() - start) / 1000;
+  }
 
   private step(dt: number, render: boolean) {
     this.time += this.reduced ? dt * 0.25 : dt;
@@ -594,8 +626,10 @@ export class TavernScene {
     if (!this.frameTimes.length) this.sampleSince = now;
     this.frameTimes.push(dt);
     // decide after 90 frames, or sooner when frames are slow (a struggling machine)
-    if (this.frameTimes.length < 90 && !(this.frameTimes.length >= 8 && now - this.sampleSince > 2000))
-      return;
+    // (test runs that step frames by hand keep the plain 90-frame rule)
+    const struggling =
+      !this.options.manual && this.frameTimes.length >= 8 && now - this.sampleSince > 2000;
+    if (this.frameTimes.length < 90 && !struggling) return;
     const avg =
       this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
     this.frameTimes = [];
@@ -679,15 +713,3 @@ export class TavernScene {
   }
 }
 
-/** True when WebGL runs on the CPU (no graphics card, or a blocked driver). */
-function isSoftwareRenderer(gl: WebGLRenderingContext | WebGL2RenderingContext) {
-  try {
-    const info = gl.getExtension("WEBGL_debug_renderer_info");
-    const name = String(
-      gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "",
-    );
-    return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
-  } catch {
-    return false;
-  }
-}
