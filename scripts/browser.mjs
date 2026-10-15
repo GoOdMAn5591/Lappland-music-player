@@ -23,6 +23,19 @@ export async function launchBrowser(options = {}) {
 }
 
 /**
+ * A browser profile kept on disk, like everyday Safari / Chrome. (Fresh
+ * contexts are private-browsing-like: WebKit won't keep audio files in
+ * IndexedDB there, just as Safari's private windows don't.)
+ */
+export async function launchPersistent(dir, options = {}) {
+  const type = browserName === "webkit" ? webkit : chromium;
+  const args = browserName === "webkit" ? undefined : webgl;
+  const context = await type.launchPersistentContext(dir, { headless: true, ...(args ? { args } : {}), ...options });
+  context.setDefaultTimeout(60_000);
+  return context;
+}
+
+/**
  * CI machines have no graphics card: the 3D bar draws in software and every
  * step takes longer than on a real computer. Give each action a minute.
  */

@@ -6,8 +6,9 @@
 
 import { expect as baseExpect } from "@playwright/test";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { browserName, launchBrowser } from "./browser.mjs";
+import { browserName, launchPersistent } from "./browser.mjs";
 
 const expect = baseExpect.configure({ timeout: 45_000 });
 const APP_URL = process.env.APP_URL ?? "http://127.0.0.1:5173/";
@@ -40,12 +41,13 @@ for (const [index, name] of ["safari-amber", "safari-violet"].entries()) {
   files.push(file);
 }
 
-const browser = await launchBrowser();
+// an everyday (not private) profile, so IndexedDB keeps the audio as in Safari
+const profile = await fs.mkdtemp(path.join(os.tmpdir(), "tavern-webkit-"));
+const context = await launchPersistent(profile, { viewport: { width: 1440, height: 900 } });
 const errors = [];
 try {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addInitScript(() => localStorage.setItem("tavern-skip-entrance", "true"));
-  const page = await context.newPage();
+  const page = context.pages()[0] ?? (await context.newPage());
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(APP_URL);
   await expect(page.locator(".tavern-app")).toHaveAttribute("data-scene", /^(ready|failed)$/, {
@@ -63,6 +65,9 @@ try {
   // import into the cellar
   await page.locator('input[type="file"][accept*="audio"]').setInputFiles(files);
   await expect(page.locator(".status-toast")).toContainText(/已添加 2 只酒杯/, { timeout: 90_000 });
+  const imported = await page.locator(".status-toast").textContent();
+  console.log(`import: ${imported}`);
+  expect(imported).toContain("音频与封面已存入本地酒窖");
 
   // play from the transport (works with or without the 3D bar)
   await page.getByRole("button", { name: "播放", exact: true }).click();
@@ -106,5 +111,6 @@ try {
   expect(errors).toEqual([]);
   console.log(`${browserName} passed: scene ${scene} (${gl}), import, play, menu, reload, panels, shortcut.`);
 } finally {
-  await browser.close();
+  await context.close();
+  await fs.rm(profile, { recursive: true, force: true });
 }
