@@ -21,7 +21,11 @@ jobs:
       - run: npx playwright install webkit
       - run: npm run build
       - name: Mac plumbing (real cloudflared, real 启动酒馆.command)
-        run: npm run test:platform
+        run: |
+          npm run test:platform 2>&1 | tee /tmp/platform.log
+          status=${PIPESTATUS[0]}
+          echo "::notice title=Mac plumbing::$(grep -E '✓|passed|desktop icon' /tmp/platform.log | tr '\n' ' ')"
+          exit $status
       - name: The tavern in Safari's engine
         run: |
           node server/tavern-server.mjs --port 5173 > /tmp/tavern-server.log 2>&1 &
@@ -37,6 +41,7 @@ jobs:
             exit 1
           fi
           cat /tmp/webkit.log
+          echo "::notice title=WebKit::$(grep -E 'passed|import:' /tmp/webkit.log | tr '\n' ' ')"
       - name: Screenshot
         if: always()
         uses: actions/upload-artifact@v4
