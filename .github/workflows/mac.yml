@@ -1,0 +1,46 @@
+name: macOS
+# The tavern on a real Mac: the double-click launcher, the macOS tunnel tool
+# for 同席, and the page in Safari's engine (WebKit).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install webkit
+      - run: npm run build
+      - name: Mac plumbing (real cloudflared, real 启动酒馆.command)
+        run: npm run test:platform
+      - name: The tavern in Safari's engine
+        run: |
+          node server/tavern-server.mjs --port 5173 > /tmp/tavern-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then break; fi
+            sleep 1
+          done
+          if ! TAVERN_BROWSER=webkit npm run test:webkit > /tmp/webkit.log 2>&1; then
+            echo "::error title=test:webkit failed::$(tail -c 2500 /tmp/webkit.log | tr '\n\r' '  ')"
+            cat /tmp/webkit.log
+            exit 1
+          fi
+          cat /tmp/webkit.log
+      - name: Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkit-screenshot
+          path: test-results/webkit-desktop.png
+          if-no-files-found: ignore

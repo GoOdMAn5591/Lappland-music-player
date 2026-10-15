@@ -4,7 +4,7 @@ Implemented as "the host's computer is the tavern". There are no accounts and no
 
 ## Flow
 
-1. The host opens the room from the 同席 panel. `POST /room/open` is accepted only from this computer. It creates an unpredictable 128-bit room key and starts `cloudflared tunnel --url http://127.0.0.1:5173`. The first time, Cloudflare's release binary is downloaded into `tools/`.
+1. The host opens the room from the 同席 panel. `POST /room/open` is accepted only from this computer. It creates an unpredictable 128-bit room key and starts `cloudflared tunnel --url http://127.0.0.1:5173`. The first time, Cloudflare's release binary is downloaded into `tools/` (`server/cloudflared.mjs`: the Windows/Linux builds are plain programs, the macOS ones — Apple silicon or Intel — come as `.tgz` and are unpacked in Node; a `cloudflared` already on PATH or in Homebrew's folders is used as is).
 2. The invite link is `https://<random>.trycloudflare.com/?room=<key>`. Guests open it in any browser, type a name and press 入座. That click is also the gesture that lets their browser play audio.
 3. The host's page posts library metadata, playback snapshots and the audio of the current and next track. Guests receive snapshots over Server-Sent Events, stream the relayed audio with HTTP Range requests, and send commands back (`play | toggle | next | prev | seek | mode`). The host page applies those commands with its normal controls, so its player is the single source of truth.
 

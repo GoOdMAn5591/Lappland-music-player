@@ -21,6 +21,9 @@
     "test:persistence": "node scripts/persistence-test.mjs",
     "test:architecture": "node scripts/architecture-test.mjs",
     "test:production": "node scripts/production-test.mjs",
+    "test:platform": "node scripts/platform-test.mjs",
+    "test:webkit": "node scripts/webkit-test.mjs",
+    "tavern": "node scripts/launch.mjs",
     "test": "npm run smoke && npm run test:scene && npm run test:persistence && npm run test:architecture"
   },
   "dependencies": {

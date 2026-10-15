@@ -2098,6 +2098,7 @@ button:disabled {
 .integration-dialog::backdrop {
   background: rgba(5, 3, 3, 0.55);
   backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
 
 .library-settings[open],

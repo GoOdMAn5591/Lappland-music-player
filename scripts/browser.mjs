@@ -1,7 +1,14 @@
-import { chromium } from "@playwright/test";
+import { chromium, webkit } from "@playwright/test";
 // SwiftShader is only a fallback: machines with a GPU keep hardware WebGL.
 const webgl = ["--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+/** TAVERN_BROWSER=webkit runs the same checks in Safari's engine (macOS CI). */
+export const browserName = process.env.TAVERN_BROWSER === "webkit" ? "webkit" : "chromium";
 export async function launchBrowser(options = {}) {
+  if (browserName === "webkit") {
+    // Chromium-only switches mean nothing to WebKit
+    const { args: _args, ...rest } = options;
+    return patient(await webkit.launch({ headless: true, ...rest }));
+  }
   options = { ...options, args: [...webgl, ...(options.args ?? [])] };
   if (process.platform === "win32" && !process.env.CI) {
     for (const channel of ["msedge", "chrome"]) {

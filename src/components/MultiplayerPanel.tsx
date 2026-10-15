@@ -15,6 +15,7 @@ import type { TavernController } from "../app/useTavernController";
 import type { RoomMember, TunnelInfo } from "../multiplayer/room";
 import { IntegrationDialog } from "./IntegrationDialog";
 import { t } from "../i18n";
+import { launcherName } from "../config";
 
 function MemberList({ members, meId }: { members: RoomMember[]; meId?: string }) {
   if (!members.length) return null;
@@ -162,7 +163,7 @@ export function MultiplayerPanel({
             <div>
               <strong>{room.status === "checking" ? t("正在查看……") : t("现在开不了房间")}</strong>
               <small>
-                {t("同席需要用「启动酒馆.bat」打开酒馆。现在这个页面是开发模式（npm run dev）。")}
+                {t("同席需要用「{launcher}」打开酒馆。现在这个页面是开发模式（npm run dev）。", { launcher: launcherName })}
               </small>
             </div>
           </div>

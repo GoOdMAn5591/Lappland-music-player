@@ -28,6 +28,7 @@ import {
   type TunnelInfo,
 } from "./room";
 import { t } from "../i18n";
+import { launcherName } from "../config";
 
 /** What the room needs from the player (kept in a ref, so always the latest render). */
 export interface RoomBridge {
@@ -213,7 +214,7 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
         connectHost(clean);
       } catch {
         setStatus("idle");
-        setMessage(t("房间没能打开：请确认是用「启动酒馆.bat」启动的。"));
+        setMessage(t("房间没能打开：请确认是用「{launcher}」启动的。", { launcher: launcherName }));
       }
     },
     [connectHost],

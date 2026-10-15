@@ -202,8 +202,8 @@ export const EN: Record<string, string> = {
     "Songs stream live from the host's computer. On a slow connection it buffers first, then catches up. Volume only affects you.",
   "正在查看……": "Checking…",
   现在开不了房间: "Can't open a room right now",
-  "同席需要用「启动酒馆.bat」打开酒馆。现在这个页面是开发模式（npm run dev）。":
-    "Listen Together needs the tavern started with “启动酒馆.bat”. This page is running in dev mode (npm run dev).",
+  "同席需要用「{launcher}」打开酒馆。现在这个页面是开发模式（npm run dev）。":
+    "Listen Together needs the tavern started with “{launcher}”. This page is running in dev mode (npm run dev).",
   开放同席: "Open the table",
   你的电脑就是酒馆: "Your computer is the tavern",
   "你的电脑就是酒馆，朋友不用装任何东西": "Your computer is the tavern; friends don't install anything",
@@ -252,8 +252,8 @@ export const EN: Record<string, string> = {
   "房间已在另一个标签页里打开。": "The room is open in another tab.",
   "{who} 点了《{title}》": "{who} ordered “{title}”",
   一杯: "a glass",
-  "房间没能打开：请确认是用「启动酒馆.bat」启动的。":
-    "Couldn't open the room. Make sure the tavern was started with “启动酒馆.bat”.",
+  "房间没能打开：请确认是用「{launcher}」启动的。":
+    "Couldn't open the room. Make sure the tavern was started with “{launcher}”.",
   "{who} 端上了《{title}》": "{who} served “{title}”",
   "{who} 调了进度": "{who} moved the playhead",
   "{who} 继续播放": "{who} resumed",

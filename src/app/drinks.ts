@@ -19,7 +19,17 @@ export const fileFingerprint = (file: File) =>
 export const isSupportedAudio = (file: File) =>
   file.type.startsWith("audio/") || AUDIO_EXTENSIONS.test(file.name);
 
-export const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
+/** A random ID (Safari before 15.4 has no crypto.randomUUID). */
+function randomId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export const makeId = (prefix: string) => `${prefix}-${randomId()}`;
 
 /**
  * Let the browser read the file header before it goes on the bar.

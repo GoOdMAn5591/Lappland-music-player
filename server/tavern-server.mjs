@@ -18,6 +18,13 @@ import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  downloadCloudflared,
+  exeName,
+  findCloudflared,
+  forgetPartialDownload,
+  releaseAsset,
+} from "./cloudflared.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -307,82 +314,28 @@ function closeRoom(reason = "房主打烊了") {
 // ---------------------------------------------------------------------------
 // cloudflared quick tunnel
 
-const exeName = process.platform === "win32" ? "cloudflared.exe" : "cloudflared";
-
-function findCloudflared() {
-  const local = path.join(TOOLS, exeName);
-  if (fs.existsSync(local)) return local;
-  for (const dir of (process.env.PATH || "").split(path.delimiter)) {
-    if (!dir) continue;
-    const candidate = path.join(dir, exeName);
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return "";
-}
-
-function releaseAsset() {
-  const arch = process.arch;
-  if (process.platform === "win32")
-    return arch === "ia32"
-      ? "cloudflared-windows-386.exe"
-      : "cloudflared-windows-amd64.exe";
-  if (process.platform === "linux")
-    return arch === "arm64"
-      ? "cloudflared-linux-arm64"
-      : arch === "arm"
-        ? "cloudflared-linux-arm"
-        : "cloudflared-linux-amd64";
-  return "";
-}
-
-/** One-time download of Cloudflare's official cloudflared binary from its GitHub releases. */
-async function downloadCloudflared() {
-  const asset = releaseAsset();
-  if (!asset) throw new Error("这个系统需要自己安装 cloudflared（macOS 可用 brew install cloudflared）");
-  const url = `https://github.com/cloudflare/cloudflared/releases/latest/download/${asset}`;
-  await fsp.mkdir(TOOLS, { recursive: true });
-  const target = path.join(TOOLS, exeName);
-  const part = `${target}.part`;
-  log("正在下载 Cloudflare 隧道工具：", url);
-  setTunnel({ status: "downloading", progress: 0, error: "" });
-  const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok || !response.body)
-    throw new Error(`下载失败（HTTP ${response.status}）`);
-  const total = Number(response.headers.get("content-length") || 0);
-  const out = fs.createWriteStream(part);
-  let received = 0;
-  let lastReport = 0;
-  for await (const chunk of response.body) {
-    received += chunk.length;
-    if (!out.write(chunk)) await new Promise((r) => out.once("drain", r));
-    if (total && Date.now() - lastReport > 400) {
-      lastReport = Date.now();
-      setTunnel({ progress: Math.round((received / total) * 100) });
-    }
-  }
-  await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
-  if (received < 1_000_000) throw new Error("下载的文件不完整");
-  await fsp.rename(part, target);
-  if (process.platform !== "win32") await fsp.chmod(target, 0o755);
-  log("cloudflared 已下载到", target);
-  return target;
-}
-
 async function startTunnel() {
   if (tunnel.proc || tunnel.status === "downloading") return;
-  let bin = findCloudflared();
+  let bin = findCloudflared(TOOLS);
   try {
-    if (!bin) bin = await downloadCloudflared();
+    if (!bin) {
+      setTunnel({ status: "downloading", progress: 0, error: "" });
+      bin = await downloadCloudflared(TOOLS, {
+        log,
+        onProgress: (progress) => setTunnel({ progress }),
+      });
+    }
   } catch (error) {
-    await fsp.rm(path.join(TOOLS, `${exeName}.part`), { force: true }).catch(() => {});
+    await forgetPartialDownload(TOOLS);
     const asset = releaseAsset();
+    const manual = asset.endsWith(".tgz")
+      ? `也可以在「终端」里运行 brew install cloudflared，或从 github.com/cloudflare/cloudflared/releases 下载 ${asset}，解压出 cloudflared 放进项目的 tools 文件夹。`
+      : asset
+        ? `也可以手动从 github.com/cloudflare/cloudflared/releases 下载 ${asset}，改名为 ${exeName()} 放进项目的 tools 文件夹。`
+        : "";
     setTunnel({
       status: "missing",
-      error:
-        `下载 Cloudflare 隧道工具失败（${String(error.message || error)}）。检查网络后点「重试」；` +
-        (asset
-          ? `也可以手动从 github.com/cloudflare/cloudflared/releases 下载 ${asset}，改名为 ${exeName} 放进项目的 tools 文件夹。`
-          : ""),
+      error: `下载 Cloudflare 隧道工具失败（${String(error.message || error)}）。检查网络后点「重试」；${manual}`,
     });
     log("cloudflared 下载失败：", String(error.message || error));
     return;

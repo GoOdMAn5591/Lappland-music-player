@@ -28,7 +28,7 @@ jobs:
           done
           # run every suite, and put the reason for a failure in the run's annotations
           status=0
-          for suite in smoke test:scene test:persistence test:architecture; do
+          for suite in smoke test:scene test:persistence test:architecture test:platform; do
             echo "::group::$suite"
             if ! npm run "$suite" > "/tmp/suite.log" 2>&1; then
               status=1
