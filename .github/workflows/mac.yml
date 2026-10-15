@@ -9,8 +9,13 @@ permissions:
   contents: read
 jobs:
   mac:
-    runs-on: macos-latest
-    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Apple silicon, and the last Intel image
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,10 +47,30 @@ jobs:
           fi
           cat /tmp/webkit.log
           echo "::notice title=WebKit::$(grep -E 'passed|import:' /tmp/webkit.log | tr '\n' ' ')"
+      - name: More of the tavern in WebKit (3D bar, glasses, layouts)
+        continue-on-error: true
+        run: |
+          node server/tavern-server.mjs --port 5173 > /tmp/tavern-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5173/ > /dev/null; then break; fi
+            sleep 1
+          done
+          status=0
+          for suite in smoke test:scene; do
+            if TAVERN_BROWSER=webkit npm run "$suite" > /tmp/suite.log 2>&1; then
+              echo "::notice title=WebKit $suite::$(grep -E 'passed' /tmp/suite.log | tr '\n' ' ')"
+            else
+              status=1
+              echo "::warning title=WebKit $suite::$(tail -c 2500 /tmp/suite.log | tr '\n\r' '  ')"
+            fi
+          done
+          exit $status
       - name: Screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: webkit-screenshot
+          name: webkit-screenshot-${{ matrix.os }}
           path: test-results/webkit-desktop.png
           if-no-files-found: ignore
