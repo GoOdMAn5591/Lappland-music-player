@@ -193,6 +193,35 @@ if (process.platform !== "win32") {
   console.log("✓ the tavern downloads, unpacks and starts cloudflared for 同席");
 }
 
+// ------------------------------------------------- desktop shortcut (Mac)
+if (process.platform !== "win32") {
+  const home = path.join(tmp, "home");
+  fs.mkdirSync(path.join(home, "Desktop"), { recursive: true });
+  const made = spawnSync("/bin/bash", [path.join(root, "创建桌面快捷方式.command")], {
+    cwd: os.tmpdir(),
+    env: { ...process.env, HOME: home },
+    input: "\n",
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.equal(made.status, 0, `shortcut script: ${made.stdout}${made.stderr}`);
+  const shortcut = path.join(home, "Desktop", "无序酒馆.command");
+  const body = fs.readFileSync(shortcut, "utf8");
+  assert.ok(fs.statSync(shortcut).mode & 0o100, "the desktop launcher is executable");
+  assert.equal(spawnSync("bash", ["-n", shortcut]).status, 0, "the desktop launcher is valid bash");
+  // it points at this project, and starts it through 启动酒馆.command
+  const project = spawnSync("bash", ["-c", `${body.split("\n").find((line) => line.startsWith("project="))}; printf %s "$project"`], {
+    encoding: "utf8",
+  }).stdout;
+  assert.equal(fs.realpathSync(project), fs.realpathSync(root), "remembers the tavern folder");
+  assert.match(body, /exec \/bin\/bash "\$project\/启动酒馆.command"/);
+  if (onMac) {
+    const attributes = spawnSync("xattr", ["-l", shortcut], { encoding: "utf8" }).stdout;
+    console.log(`  (desktop icon ${/FinderInfo|ResourceFork/.test(attributes) ? "set" : "not set here (no Finder session)"})`);
+  }
+  console.log("✓ 创建桌面快捷方式.command makes a working desktop launcher");
+}
+
 // ------------------------------------------------------------ launcher plan
 const plan = JSON.parse(
   execFileSync(process.execPath, [path.join(root, "scripts/launch.mjs"), "--dry-run"], {
