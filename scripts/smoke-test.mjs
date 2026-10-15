@@ -90,6 +90,10 @@ try {
     throw new Error("Audio element did not receive a blob source.");
   await page.getByLabel("下一首", { exact: true }).click();
   await page.waitForTimeout(400);
+  await expect(
+    page.getByLabel("暂停", { exact: true }),
+    `still playing after "next" (status: ${await page.locator(".status-toast").textContent()})`,
+  ).toBeVisible();
   await page.getByLabel("暂停", { exact: true }).click();
 
   // menu: new section, notes, membership, reorder

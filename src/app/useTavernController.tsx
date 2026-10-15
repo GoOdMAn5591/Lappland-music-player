@@ -479,6 +479,8 @@ export function useTavernController() {
 
   /** Bumped by every pick, so picking the glass that just finished pours it again. */
   const [pourCount, setPourCount] = useState(0);
+  /** The latest local start; an older one that fails doesn't stop the music. */
+  const playAttempt = useRef(0);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -563,7 +565,10 @@ export function useTavernController() {
     }
     if (isPlaying) {
       ensureAudioGraph();
-      localSource.play().catch(() => {
+      const attempt = ++playAttempt.current;
+      localSource.play().catch((error: unknown) => {
+        // a newer pick / pause interrupted this start: that newer request decides
+        if (attempt !== playAttempt.current || (error as Error)?.name === "AbortError") return;
         if (isGuest) {
           // keep following the host; the next tap anywhere starts the sound
           setStatusLine(t("浏览器拦住了自动播放：点一下页面任意位置就能听到。"));
@@ -578,6 +583,7 @@ export function useTavernController() {
         setStatusLine(t("浏览器没有允许自动播放，请再点一次播放按钮。"));
       });
     } else {
+      playAttempt.current++;
       void localSource.pause();
     }
   }, [currentTrack, ensureAudioGraph, isPlaying, pourCount, spotifyReady]);
