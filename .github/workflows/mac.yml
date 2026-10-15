@@ -47,8 +47,11 @@ jobs:
           fi
           cat /tmp/webkit.log
           echo "::notice title=WebKit::$(grep -E 'passed|import:' /tmp/webkit.log | tr '\n' ' ')"
+      # Apple-silicon runners have a GPU; the Intel ones are virtual machines
+      # without one, where WebKit has no WebGL (the tavern shows its 2D
+      # fallback there, which the step above already checks).
       - name: More of the tavern in WebKit (3D bar, glasses, layouts)
-        continue-on-error: true
+        if: matrix.os == 'macos-latest'
         run: |
           node server/tavern-server.mjs --port 5173 > /tmp/tavern-server.log 2>&1 &
           SERVER_PID=$!
@@ -63,7 +66,7 @@ jobs:
               echo "::notice title=WebKit $suite::$(grep -E 'passed' /tmp/suite.log | tr '\n' ' ')"
             else
               status=1
-              echo "::warning title=WebKit $suite::$(tail -c 2500 /tmp/suite.log | tr '\n\r' '  ')"
+              echo "::error title=WebKit $suite::$(tail -c 2500 /tmp/suite.log | tr '\n\r' '  ')"
             fi
           done
           exit $status
