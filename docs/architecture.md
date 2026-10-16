@@ -12,8 +12,10 @@ src/
   assets/fonts/    vendored, unicode-range sliced OFL fonts
   integrations/spotify/  PKCE sign-in, Web API calls, Web Playback SDK device (see spotify.md)
   integrations/youtube/  IFrame Player engine, link parsing, playlist reading (see youtube.md)
+  integrations/bilibili/ embedded-player engine driven by reloads, link reading through the server (see bilibili.md)
   multiplayer/     同席 room client (room.ts) and the useRoom hook (host + guest sync)
-server/            tavern-server.mjs: serves dist/, hosts the room, runs the cloudflared quick tunnel
+server/            tavern-server.mjs: serves dist/, hosts the room, runs the cloudflared quick tunnel, looks up
+                   YouTube titles and reads Bilibili links (bilibili.mjs)
 ```
 
 `App` composes views; `useTavernController` coordinates local playback, library operations and scene intent. `useLocalVisualizer` owns the local audio graph and exposes the analyser. Views consume a typed controller without opening databases or sockets.
@@ -30,7 +32,7 @@ server/            tavern-server.mjs: serves dist/, hosts the room, runs the clo
 
 `PlayerState` contains currentTrack (catalog ID), sourceType, isPlaying, position, duration, volume, queue, repeatMode and shuffle. `useSyncExternalStore` is the React boundary. Legacy library repeat modes map to these fields. Metadata stays in the catalog.
 
-`AudioSource` defines load/play/pause/seek/setVolume/dispose and capabilities. `LocalAudioSource` accepts only object URLs or the room's relayed audio. Spotify songs are played by `spotifyEngine` (Web Playback SDK) under the listener's own account, YouTube videos by `youtubeEngine` in the visible `YouTubeScreen`. The controller switches by `track.source`: it stops the other sources first, so they never overlap.
+`AudioSource` defines load/play/pause/seek/setVolume/dispose and capabilities. `LocalAudioSource` accepts only object URLs or the room's relayed audio. Spotify songs are played by `spotifyEngine` (Web Playback SDK) under the listener's own account, YouTube videos by `youtubeEngine` in the visible `YouTubeScreen`, Bilibili videos by `bilibiliEngine` in the visible `BilibiliScreen`. The controller switches by `track.source`: it stops the other sources first, so they never overlap.
 
 ## Storage
 

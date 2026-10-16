@@ -29,7 +29,12 @@ import {
   inspectStorage,
   isSpotifyTrack,
   isYouTubeTrack,
+  isBilibiliTrack,
+  isStreamPage,
   youtubeTrackId,
+  bilibiliTrackId,
+  type BilibiliItem,
+  type BilibiliLink,
   type YouTubeItem,
   type YouTubeLink,
   loadLibrary,
@@ -56,8 +61,21 @@ import {
 } from "../integrations/spotify/api";
 import { youtubeEngine } from "../integrations/youtube/player";
 import { toYouTubeTrack } from "../integrations/youtube/catalog";
-/** A page in a new order (a YouTube picks page keeps its videos in the same order). */
+import { bilibiliEngine, bilibiliKey } from "../integrations/bilibili/player";
+import { toBilibiliTrack } from "../integrations/bilibili/catalog";
+/** A page in a new order (a YouTube / Bilibili picks page keeps its videos in the same order). */
 function withOrder(playlist: TavernPlaylist, order: string[]): TavernPlaylist {
+  if (playlist.bilibili) {
+    const byTrack = new Map(playlist.bilibili.items.map((item) => [bilibiliTrackId(item.bvid, item.p), item]));
+    return {
+      ...playlist,
+      trackIds: order,
+      bilibili: {
+        ...playlist.bilibili,
+        items: order.map((id) => byTrack.get(id)).filter((item): item is BilibiliItem => Boolean(item)),
+      },
+    };
+  }
   if (!playlist.youtube) return { ...playlist, trackIds: order };
   const byTrack = new Map(playlist.youtube.items.map((item) => [youtubeTrackId(item.id), item]));
   return {
@@ -114,6 +132,9 @@ export function useTavernController() {
   const [librarySettingsOpen, setLibrarySettingsOpen] = useState(false);
   const [spotifyPanelOpen, setSpotifyPanelOpen] = useState(false);
   const [youtubePanelOpen, setYouTubePanelOpen] = useState(false);
+  const [bilibiliPanelOpen, setBilibiliPanelOpen] = useState(false);
+  /** A Bilibili page the panel should read again as soon as it opens. */
+  const [bilibiliRefreshId, setBilibiliRefreshId] = useState<string>();
   /** A YouTube page the panel should read again as soon as it opens. */
   const [youtubeRefreshId, setYouTubeRefreshId] = useState<string>();
   const [multiplayerPanelOpen, setMultiplayerPanelOpen] = useState(false);
@@ -268,12 +289,23 @@ export function useTavernController() {
         if (!byId.has(item.id)) byId.set(item.id, toYouTubeTrack(item));
     return [...byId.values()];
   }, [playlists, isGuest]);
+  /** Bilibili videos live on their menu pages too. */
+  const bilibiliTracks = useMemo(() => {
+    if (isGuest) return [];
+    const byId = new Map<string, TavernTrack>();
+    for (const playlist of playlists)
+      for (const item of playlist.bilibili?.items ?? []) {
+        const id = bilibiliTrackId(item.bvid, item.p);
+        if (!byId.has(id)) byId.set(id, toBilibiliTrack(item));
+      }
+    return [...byId.values()];
+  }, [playlists, isGuest]);
   const allTracks = useMemo(
     () =>
-      spotifyTracks.length || youtubeTracks.length
-        ? [...tracks, ...spotifyTracks, ...youtubeTracks]
+      spotifyTracks.length || youtubeTracks.length || bilibiliTracks.length
+        ? [...tracks, ...spotifyTracks, ...youtubeTracks, ...bilibiliTracks]
         : tracks,
-    [tracks, spotifyTracks, youtubeTracks],
+    [tracks, spotifyTracks, youtubeTracks, bilibiliTracks],
   );
   const trackMap = useMemo(
     () => new Map(allTracks.map((track) => [track.id, track])),
@@ -291,7 +323,9 @@ export function useTavernController() {
             ? spotifyReady && track.spotifyUri
             : isYouTubeTrack(track)
               ? track.youtubeId
-              : track.objectUrl),
+              : isBilibiliTrack(track)
+                ? track.bilibiliId
+                : track.objectUrl),
       ),
     [spotifyReady],
   );
@@ -485,8 +519,32 @@ export function useTavernController() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    // one source at a time: YouTube's screen goes quiet unless it's YouTube's turn
+    // one source at a time: a video screen goes quiet unless it's its turn
     if (!isYouTubeTrack(currentTrack) && youtubeEngine.videoId) youtubeEngine.stop();
+    if (!isBilibiliTrack(currentTrack) && bilibiliEngine.key) bilibiliEngine.stop();
+    if (isBilibiliTrack(currentTrack)) {
+      if (audio.getAttribute("src")) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+      if (spotifyEngine.uri) void spotifyEngine.stop();
+      setDuration(currentTrack!.duration || 0);
+      // a guest's screen is lined up with the host by the room (useRoom)
+      if (isGuest) return;
+      const bvid = currentTrack!.bilibiliId!;
+      const part = currentTrack!.bilibiliPage ?? 1;
+      const key = bilibiliKey(bvid, part);
+      if (!isPlaying) {
+        if (bilibiliEngine.isOn(key)) bilibiliEngine.pause();
+        return;
+      }
+      if (!bilibiliEngine.isOn(key) || bilibiliEngine.finished) {
+        setProgress(0);
+        bilibiliEngine.play(bvid, part, 0, { duration: currentTrack!.duration, title: currentTrack!.title });
+      } else if (!bilibiliEngine.wantPlaying) bilibiliEngine.resume();
+      return;
+    }
     if (isYouTubeTrack(currentTrack)) {
       if (audio.getAttribute("src")) {
         audio.pause();
@@ -702,10 +760,9 @@ export function useTavernController() {
       const undecodable: string[] = [];
       // local songs never go onto a Spotify page: use the first local menu page instead
       const selectedId =
-        selectedPlaylist && !selectedPlaylist.spotify && !selectedPlaylist.youtube
+        selectedPlaylist && !isStreamPage(selectedPlaylist)
           ? selectedPlaylist.id
-          : (libraryRef.current.playlists.find((playlist) => !playlist.spotify && !playlist.youtube)
-              ?.id ?? "today-menu");
+          : (libraryRef.current.playlists.find((playlist) => !isStreamPage(playlist))?.id ?? "today-menu");
 
       for (const file of fileArray) {
         const fingerprint = fileFingerprint(file);
@@ -821,7 +878,7 @@ export function useTavernController() {
       setTracks(nextTracks);
       tracksRef.current = nextTracks;
       setPlaylists(nextPlaylists);
-      if ((selectedPlaylist?.spotify || selectedPlaylist?.youtube) && importedIds.length)
+      if (isStreamPage(selectedPlaylist) && importedIds.length)
         setSelectedPlaylistId(selectedId);
       if (!currentTrackId && importedIds[0]) setCurrentTrackId(importedIds[0]);
       const rejected = undecodable.length
@@ -971,12 +1028,18 @@ export function useTavernController() {
       !selectedPlaylist
     )
       return;
-    if (selectedPlaylist.spotify || selectedPlaylist.youtube?.list) {
+    if (
+      selectedPlaylist.spotify ||
+      selectedPlaylist.youtube?.list ||
+      (selectedPlaylist.bilibili && selectedPlaylist.bilibili.kind !== "picks")
+    ) {
       setDropTargetId(undefined);
       setStatusLine(
         selectedPlaylist.spotify
           ? t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。")
-          : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
+          : selectedPlaylist.bilibili
+            ? t("B站列表的顺序跟着 B站走，要调顺序请在 B站里改。")
+            : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
       );
       return;
     }
@@ -1002,11 +1065,17 @@ export function useTavernController() {
       return;
     }
     if (!selectedPlaylist || trackId === targetTrackId) return;
-    if (selectedPlaylist.spotify || selectedPlaylist.youtube?.list) {
+    if (
+      selectedPlaylist.spotify ||
+      selectedPlaylist.youtube?.list ||
+      (selectedPlaylist.bilibili && selectedPlaylist.bilibili.kind !== "picks")
+    ) {
       setStatusLine(
         selectedPlaylist.spotify
           ? t("Spotify 歌单的顺序跟着 Spotify 走，要调顺序请在 Spotify 里改。")
-          : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
+          : selectedPlaylist.bilibili
+            ? t("B站列表的顺序跟着 B站走，要调顺序请在 B站里改。")
+            : t("YouTube 歌单的顺序跟着 YouTube 走，要调顺序请在 YouTube 里改。"),
       );
       return;
     }
@@ -1091,8 +1160,8 @@ export function useTavernController() {
 
   const toggleTrackInPlaylist = (playlistId: string, trackId: string) => {
     const target = playlists.find((playlist) => playlist.id === playlistId);
-    if (target?.spotify || target?.youtube || trackMap.get(trackId)?.source) {
-      setStatusLine(t("Spotify 和 YouTube 的歌只待在它们自己的歌单页里。"));
+    if (isStreamPage(target) || trackMap.get(trackId)?.source) {
+      setStatusLine(t("Spotify、YouTube 和 B站的歌只待在它们自己的歌单页里。"));
       return;
     }
     setPlaylists((current) =>
@@ -1184,6 +1253,7 @@ export function useTavernController() {
     const position = Math.max(0, value);
     if (isSpotifyTrack(currentTrack)) void spotifyEngine.seek(position);
     else if (isYouTubeTrack(currentTrack)) youtubeEngine.seek(position);
+    else if (isBilibiliTrack(currentTrack)) bilibiliEngine.seek(position);
     else void localSource.seek(position);
     setProgress(position);
   };
@@ -1556,6 +1626,142 @@ export function useTavernController() {
     );
   };
 
+  // -------------------------------------------------------------- Bilibili
+  const bilibiliNow = isBilibiliTrack(currentTrack)
+    ? bilibiliKey(currentTrack!.bilibiliId ?? "", currentTrack!.bilibiliPage ?? 1)
+    : undefined;
+
+  // where the video is (worked out by the screen; a guest's follows the room)
+  useEffect(() => {
+    if (!bilibiliNow || isGuest) return;
+    const tick = () => {
+      if (!bilibiliEngine.isOn(bilibiliNow)) return setProgress(0);
+      setProgress(bilibiliEngine.position());
+      if (bilibiliEngine.durationS > 0) setDuration(bilibiliEngine.durationS);
+    };
+    tick();
+    const timer = window.setInterval(tick, 250);
+    return () => window.clearInterval(timer);
+  }, [bilibiliNow, isGuest]);
+
+  // finished / never loaded
+  const bilibiliEventsRef = useRef({ ended: (_key: string) => {}, error: (_key: string) => {} });
+  bilibiliEventsRef.current = {
+    ended: (key) => {
+      if (isGuest || key !== bilibiliNow) return;
+      if (playbackMode === "repeat-one" && currentTrack) {
+        bilibiliEngine.play(currentTrack.bilibiliId!, currentTrack.bilibiliPage ?? 1, 0, {
+          duration: currentTrack.duration,
+          title: currentTrack.title,
+        });
+        return;
+      }
+      setPourCount((count) => count + 1);
+      playByOffset(1);
+    },
+    error: (key) => {
+      if (key !== bilibiliNow) return;
+      setStatusLine(t("B站播放器没加载出来（网络，或这个视频在你所在的地区看不了），跳过这一杯。"));
+      if (!isGuest) playByOffset(1);
+    },
+  };
+  useEffect(() => {
+    const offs = [
+      bilibiliEngine.on("ended", ({ key }) => bilibiliEventsRef.current.ended(key)),
+      bilibiliEngine.on("error", ({ key }) => bilibiliEventsRef.current.error(key)),
+    ];
+    return () => offs.forEach((off) => off());
+  }, []);
+
+  /** Put a Bilibili collection / series / folder / many-part video on the menu (or read a page again). */
+  const linkBilibili = (link: BilibiliLink, name: string, pageId?: string) => {
+    if (isGuest) return;
+    const trackIds = link.items.map((item) => bilibiliTrackId(item.bvid, item.p));
+    const existing =
+      (pageId && playlistsRef.current.find((item) => item.id === pageId)) ||
+      (link.id &&
+        playlistsRef.current.find(
+          (item) => item.bilibili?.kind === link.kind && item.bilibili?.id === link.id,
+        ));
+    if (existing) {
+      playlistsRef.current = playlistsRef.current.map((item) =>
+        item.id === existing.id ? { ...item, trackIds, bilibili: link } : item,
+      );
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(existing.id);
+      setStatusLine(t("「{name}」已从 B站重新读取：{n} 杯。", { name: existing.name, n: trackIds.length }));
+      return;
+    }
+    const playlist: TavernPlaylist = {
+      id: `bilibili-${link.kind}-${link.id ?? "page"}-${Date.now().toString(36)}`,
+      name,
+      mood: "Bilibili",
+      trackIds,
+      bilibili: link,
+    };
+    playlistsRef.current = [...playlistsRef.current, playlist];
+    setPlaylists(playlistsRef.current);
+    setSelectedPlaylistId(playlist.id);
+    setStatusLine(t("「{name}」从 B站端上来了 {n} 杯。", { name, n: trackIds.length }));
+  };
+
+  /** Single videos go onto one 「B站点歌」 page. */
+  const addBilibiliVideo = (item: BilibiliItem) => {
+    if (isGuest) return;
+    const page = playlistsRef.current.find((playlist) => playlist.bilibili?.kind === "picks");
+    const title = item.title || item.bvid;
+    const id = bilibiliTrackId(item.bvid, item.p);
+    if (page?.bilibili?.items.some((existing) => bilibiliTrackId(existing.bvid, existing.p) === id)) {
+      setSelectedPlaylistId(page.id);
+      setStatusLine(t("《{title}》已经在「{name}」里了。", { title, name: t(page.name) }));
+      return;
+    }
+    if (page?.bilibili) {
+      const items = [...page.bilibili.items, item];
+      playlistsRef.current = playlistsRef.current.map((playlist) =>
+        playlist.id === page.id
+          ? {
+              ...playlist,
+              trackIds: items.map((video) => bilibiliTrackId(video.bvid, video.p)),
+              bilibili: { ...page.bilibili!, items, fetchedAt: Date.now() },
+            }
+          : playlist,
+      );
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(page.id);
+    } else {
+      const playlist: TavernPlaylist = {
+        id: `bilibili-picks-${Date.now().toString(36)}`,
+        name: "B站点歌", // translated where it is shown
+        mood: "Bilibili",
+        trackIds: [id],
+        bilibili: { kind: "picks", url: "https://www.bilibili.com/", items: [item], fetchedAt: Date.now() },
+      };
+      playlistsRef.current = [...playlistsRef.current, playlist];
+      setPlaylists(playlistsRef.current);
+      setSelectedPlaylistId(playlist.id);
+    }
+    setStatusLine(t("《{title}》加进了 B站点歌。", { title }));
+  };
+
+  const removeBilibiliVideo = (pageId: string, trackId: string) => {
+    if (isGuest) return;
+    setPlaylists((current) =>
+      current.map((playlist) =>
+        playlist.id === pageId && playlist.bilibili
+          ? {
+              ...playlist,
+              trackIds: playlist.trackIds.filter((id) => id !== trackId),
+              bilibili: {
+                ...playlist.bilibili,
+                items: playlist.bilibili.items.filter((item) => bilibiliTrackId(item.bvid, item.p) !== trackId),
+              },
+            }
+          : playlist,
+      ),
+    );
+  };
+
   // ------------------------------------------------------------- 同席 room
   const hostPlaylistRef = useRef<string>();
   const room = useRoom(inviteKey, {
@@ -1576,13 +1782,19 @@ export function useTavernController() {
           ? youtubeEngine.isOn(youtubeIdNow)
             ? youtubeEngine.position()
             : 0
-          : (audioRef.current?.currentTime ?? 0),
+          : bilibiliNow
+            ? bilibiliEngine.isOn(bilibiliNow)
+              ? bilibiliEngine.position()
+              : 0
+            : (audioRef.current?.currentTime ?? 0),
     audible: () =>
       spotifyUriNow
         ? spotifyEngine.isOn(spotifyUriNow) && spotifyEngine.playing
         : youtubeIdNow
           ? youtubeEngine.isOn(youtubeIdNow) && youtubeEngine.rolling
-          : isPlaying,
+          : bilibiliNow
+            ? bilibiliEngine.isOn(bilibiliNow) && bilibiliEngine.rolling
+            : isPlaying,
     spotifyClientId: spotifyReady ? spotify.clientId : undefined,
     showProgress: (position, length) => {
       setProgress(position);
@@ -1666,6 +1878,13 @@ export function useTavernController() {
     linkYouTube,
     addYouTubeVideo,
     removeYouTubeVideo,
+    bilibiliPanelOpen,
+    setBilibiliPanelOpen,
+    bilibiliRefreshId,
+    setBilibiliRefreshId,
+    linkBilibili,
+    addBilibiliVideo,
+    removeBilibiliVideo,
     isPlayable,
     currentTrackId,
     setIsPlaying,

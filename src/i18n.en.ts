@@ -804,4 +804,126 @@ export const EN: Record<string, string> = {
     "“{title}” added to YouTube Picks.",
   "YouTube 视频也不经过你的电脑：朋友什么账号都不用，各自的浏览器里会出现同一块小屏幕。":
     "YouTube videos don't go through your computer either: friends need no account, and the same little screen appears in each of their browsers.",
+  "B站":
+    "Bilibili",
+  "B站点歌":
+    "Bilibili Picks",
+  "B站歌单":
+    "Bilibili",
+  "B站上已失效":
+    "Gone from Bilibili",
+  "B站列表的顺序跟着 B站走，要调顺序请在 B站里改。":
+    "A Bilibili list keeps Bilibili's order; reorder it on Bilibili.",
+  "B站屏幕":
+    "Bilibili screen",
+  "B站播放器":
+    "Bilibili player",
+  "B站播放器没加载出来（网络，或这个视频在你所在的地区看不了），跳过这一杯。":
+    "The Bilibili player didn't load (the network, or the video isn't available where you are). Skipping this glass.",
+  "B站暂时拒绝了读取（访问太频繁），过一两分钟再试。":
+    "Bilibili refused for now (too many requests). Try again in a minute or two.",
+  "B站用户协议":
+    "Bilibili Terms of Use",
+  "B站给外链播放器的画质上限是 360P（登录了也一样，这是 B站的规定）。想看高清，点小屏幕上的「在 B站打开」。":
+    "Bilibili caps embedded players at 360p (signed in or not — Bilibili's rule). For HD, use “Open on Bilibili” on the little screen.",
+  "B站说这个视频 / 列表不存在了（被删、设为私密或还在审核）。":
+    "Bilibili says this video / list doesn't exist (deleted, private or still under review).",
+  "B站链接":
+    "Bilibili link",
+  "Spotify、YouTube 和 B站的歌只待在它们自己的歌单页里。":
+    "Spotify, YouTube and Bilibili songs stay on their own pages.",
+  "{kind} · {n} 个视频 · {when}":
+    "{kind} · {n} videos · {when}",
+  "{n} 个视频":
+    "{n} videos",
+  "《{title}》加进了 B站点歌。":
+    "“{title}” added to Bilibili Picks.",
+  "「{name}」从 B站端上来了 {n} 杯。":
+    "“{name}”: {n} glasses poured from Bilibili.",
+  "「{name}」已从 B站重新读取：{n} 杯。":
+    "“{name}” read again from Bilibili: {n} glasses.",
+  "不用登录，同席的朋友也不用：每个人在自己的浏览器里看，酒馆帮大家对齐进度。":
+    "No sign-in, for you or your friends: everyone watches in their own browser and the tavern keeps you in step.",
+  "从 B站刷新":
+    "Refresh from Bilibili",
+  "从 B站重新读取":
+    "Read again from Bilibili",
+  "分P视频":
+    "Multi-part video",
+  "单个视频会放进「B站点歌」页；合集、系列、收藏夹和分P视频会各自变成一页。":
+    "Single videos go onto the “Bilibili Picks” page; collections, series, favourites and multi-part videos each become a page.",
+  "合集":
+    "Collection",
+  "吧台右下角会出现一块 B站小屏幕，视频在里面播放。":
+    "A little Bilibili screen appears at the bottom right of the bar; the video plays there.",
+  "在 B站打开":
+    "Open on Bilibili",
+  "在 B站打开这个列表":
+    "Open this list on Bilibili",
+  "在 B站打开这个视频":
+    "Open this video on Bilibili",
+  "在 B站打开（高清）":
+    "Open on Bilibili (HD)",
+  "在 B站看高清":
+    "Watch in HD on Bilibili",
+  "已加进「B站点歌」。它属于合集「{title}」（{n} 个视频）。":
+    "Added to “Bilibili Picks”. It's part of the collection “{title}” ({n} videos).",
+  "把 B站视频放上吧台":
+    "Put Bilibili videos on the bar",
+  "撕下「{name}」？B站上的视频不受影响。":
+    "Tear off “{name}”? The videos on Bilibili stay as they are.",
+  "收藏夹":
+    "Favourites",
+  "收藏夹要设为公开才读得到。一个页面最多读前 {n} 个视频。":
+    "Favourites folders must be public to be read. A page reads at most the first {n} videos.",
+  "整个合集放上吧台":
+    "Put the whole collection on the bar",
+  "正在打开 B站播放器……":
+    "Opening the Bilibili player…",
+  "正在读取 B站……":
+    "Reading Bilibili…",
+  "没有声音？点小锁解锁，再点画面里的播放键。":
+    "No sound? Click the little lock to unlock, then the play button in the picture.",
+  "点画面：播放 / 暂停":
+    "Click the picture: play / pause",
+  "点这里粘贴 B站视频、合集或收藏夹链接。":
+    "Click here to paste a Bilibili video, collection or favourites link.",
+  "现在可以直接用 B站播放器（音量、播放键）。这里按的暂停和拖动不会同步给同席，用完点锁。":
+    "You can use the Bilibili player directly now (volume, play). Pausing or seeking here isn't shared with Listen Together; click the lock when done.",
+  "粘贴 B站视频、合集或收藏夹链接":
+    "Paste a Bilibili video, collection or favourites link",
+  "系列":
+    "Series",
+  "视频":
+    "Video",
+  "视频、合集、收藏夹，朋友也能一起看":
+    "Videos, collections, favourites — friends can watch too",
+  "视频由 B站提供，直接在你的浏览器里播放，酒馆不下载、不转播。":
+    "Videos come from Bilibili and play straight in your browser; the tavern doesn't download or relay them.",
+  "解锁 B站播放器":
+    "Unlock the Bilibili player",
+  "解锁，直接用 B站播放器":
+    "Unlock: use the Bilibili player directly",
+  "认不出这个链接：粘贴视频、合集、系列或公开收藏夹的链接（也可以是 b23.tv 分享链接）。付费视频和番剧放不了。":
+    "That link isn't recognised: paste a video, collection, series or public favourites link (b23.tv share links work too). Paid videos and anime can't be played.",
+  "请用酒馆的播放 / 暂停 / 拖动来控制，大家才会同步；B站播放器里按的不会同步给同席。":
+    "Use the tavern's play / pause / seek so everyone stays in step; buttons pressed inside the Bilibili player aren't shared.",
+  "读取 B站时出错了，过一会儿再试。":
+    "Something went wrong reading Bilibili. Try again in a moment.",
+  "读取 B站需要用「{launcher}」打开酒馆（开发模式读不了）。":
+    "Reading Bilibili needs the tavern started with “{launcher}” (dev mode can't).",
+  "这个列表里没有能放的视频。":
+    "There's nothing playable in this list.",
+  "这个收藏夹是私密的：在 B站把它设为公开，再粘贴一次。":
+    "This favourites folder is private: make it public on Bilibili and paste it again.",
+  "连不上 B站：检查这台电脑的网络。":
+    "Can't reach Bilibili: check this computer's network.",
+  "酒单里的 B站页":
+    "Bilibili pages on the menu",
+  "锁回去":
+    "Lock",
+  "锁回去，用酒馆的按钮":
+    "Lock: back to the tavern's buttons",
+  "音量请用电脑的音量键调：B站播放器不让网页调它的音量。":
+    "Use your computer's volume keys: the Bilibili player doesn't let pages set its volume.",
 };

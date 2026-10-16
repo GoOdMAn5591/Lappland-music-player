@@ -18,6 +18,7 @@ import zlib from "node:zlib";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { BilibiliError, readBilibili } from "./bilibili.mjs";
 import {
   downloadCloudflared,
   exeName,
@@ -911,11 +912,25 @@ async function handleYouTubeMeta(req, res, url) {
   send(res, 200, body);
 }
 
+// Bilibili videos for the host's menu (see server/bilibili.mjs). Local only too.
+async function handleBilibiliMeta(req, res, url) {
+  if (!isLocal(req) || req.headers["x-tavern"] !== "1") return send(res, 403, { error: "local only" });
+  try {
+    const result = await readBilibili(url.searchParams.get("link") || "");
+    send(res, 200, { ok: true, result });
+  } catch (error) {
+    if (!(error instanceof BilibiliError)) console.error(error);
+    send(res, 200, { ok: false, error: error instanceof BilibiliError ? error.reason : "unknown" });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://local");
   try {
     if (url.pathname === "/tavern/youtube-meta" && req.method === "GET")
       await handleYouTubeMeta(req, res, url);
+    else if (url.pathname === "/tavern/bilibili-meta" && req.method === "GET")
+      await handleBilibiliMeta(req, res, url);
     else if (url.pathname.startsWith("/room/")) await handleRoom(req, res, url);
     else await serveStatic(req, res, url);
   } catch (error) {

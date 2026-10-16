@@ -32,7 +32,7 @@ Guests often open the link with the browser's page translation on. Translation r
 - Quick-tunnel URLs change every time a room opens, and Cloudflare offers quick tunnels without uptime guarantees. A named tunnel or a hosted relay would be needed for a permanent address.
 - Every listener streams from the host's upload bandwidth. Large FLAC/WAV files take longer to start for guests.
 - If the host page disconnects, the room survives for 90 s, so a refresh doesn't end it. Closing the server window ends the room.
-- Spotify songs and YouTube videos are never relayed. See below.
+- Spotify songs, YouTube videos and Bilibili videos are never relayed. See below.
 
 ## Spotify songs
 
@@ -41,3 +41,7 @@ Spotify audio must not be rebroadcast, so a Spotify song in the room carries onl
 ## YouTube videos
 
 A YouTube video carries only its video ID and title (`RoomTrack.youtube`). Every listener, guests included, plays it in their own YouTube screen; no account is needed. The host's player is the clock (`rolling` counts a short re-buffer after a jump as still playing). Guests start at `target + lead` (lead learned from start latency, ignoring waits over 5 s, which are ads) and jump when more than 0.5 s off, or at once when the host's news says someone jumped. Pressing pause or dragging the seek bar inside YouTube's own player becomes a room command (`toggle` / `seek`); the guest's sync loop checks for such a jump first and holds off for 2.5 s, so it never pulls the video back before the host answers. Details in [youtube.md](youtube.md).
+
+## Bilibili videos
+
+A Bilibili video carries only its BV ID, part, title and cover (`RoomTrack.bilibili`; covers only from hdslb.com). Every listener, guests included, plays it in their own Bilibili screen; no account is needed. Bilibili's embedded player reports nothing back, so the host's estimated position is the clock (see [bilibili.md](bilibili.md)). While the host's screen reloads after a jump, the host publishes `reason: "buffering"` instead of a pause, and guests keep going. Guests start at `target + loadS + bootS` (their own learned load time plus the player's start-up) and line up again, with a reload, only when more than 2.5 s off: at most every 8 s, or at once when the host's news changed. Pause, resume and jumps come from the tavern's own controls; Bilibili's controls sit behind the screen's shield, and what someone does after unlocking it isn't seen by the room.

@@ -47,6 +47,16 @@ jobs:
           fi
           cat /tmp/webkit.log
           echo "::notice title=WebKit::$(grep -E 'passed|import:' /tmp/webkit.log | tr '\n' ' ')"
+      - name: Bilibili in Safari's engine
+        # starts its own tavern server, with stand-ins for Bilibili
+        run: |
+          if ! TAVERN_BROWSER=webkit npm run test:bilibili > /tmp/bilibili.log 2>&1; then
+            echo "::error title=test:bilibili failed::$(tail -c 2500 /tmp/bilibili.log | tr '\n\r' '  ')"
+            cat /tmp/bilibili.log
+            exit 1
+          fi
+          cat /tmp/bilibili.log
+          echo "::notice title=WebKit Bilibili::$(grep -E 'passed' /tmp/bilibili.log | tr '\n' ' ')"
       # Apple-silicon runners have a GPU; the Intel ones are virtual machines
       # without one, where WebKit has no WebGL (the tavern shows its 2D
       # fallback there, which the step above already checks).

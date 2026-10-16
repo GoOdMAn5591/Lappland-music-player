@@ -9,6 +9,8 @@ import { RoomJoin } from "./components/RoomJoin";
 import { SpotifyPanel } from "./components/SpotifyPanel";
 import { YouTubePanel } from "./components/YouTubePanel";
 import { YouTubeScreen } from "./components/YouTubeScreen";
+import { BilibiliPanel } from "./components/BilibiliPanel";
+import { BilibiliScreen } from "./components/BilibiliScreen";
 import { Hud } from "./components/hud/Hud";
 import { MenuDrawer } from "./components/hud/MenuDrawer";
 import { createFrameBus } from "./components/hud/frameBus";
@@ -161,6 +163,7 @@ export default function App() {
         />
         <MenuDrawer model={model} open={menuOpen} onClose={closeMenu} />
         <YouTubeScreen model={model} />
+        <BilibiliScreen model={model} />
 
         {scene === "failed" && (
           <div className="scene-fallback" role="alert">
@@ -196,6 +199,9 @@ export default function App() {
         )}
         {model.youtubePanelOpen && (
           <YouTubePanel model={model} onClose={() => model.setYouTubePanelOpen(false)} />
+        )}
+        {model.bilibiliPanelOpen && (
+          <BilibiliPanel model={model} onClose={() => model.setBilibiliPanelOpen(false)} />
         )}
         {model.spotifyPanelOpen && (
           <SpotifyPanel model={model} onClose={() => model.setSpotifyPanelOpen(false)} />

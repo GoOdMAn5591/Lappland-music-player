@@ -1,7 +1,9 @@
 import { assetUrl } from "../config";
 import { hashText } from "../app/recipes";
 import {
+  BILIBILI_BVID,
   YOUTUBE_ID,
+  isBilibiliTrack,
   isSpotifyTrack,
   isYouTubeTrack,
   type PlaybackMode,
@@ -9,6 +11,7 @@ import {
   type TavernTrack,
 } from "../storage";
 import { toYouTubeTrack } from "../integrations/youtube/catalog";
+import { toBilibiliTrack } from "../integrations/bilibili/catalog";
 
 /**
  * 同席 (listening room) client.
@@ -19,9 +22,10 @@ import { toYouTubeTrack } from "../integrations/youtube/catalog";
  * Server-Sent Events and forwards everyone's commands to the host, whose player
  * stays the single source of truth.
  *
- * Spotify songs and YouTube videos are the exception: they are never relayed.
- * The room only shares which song and where; every friend plays it in their
- * own browser (Spotify with their own account, YouTube in their own screen).
+ * Spotify songs, YouTube and Bilibili videos are the exception: they are never
+ * relayed. The room only shares which song and where; every friend plays it in
+ * their own browser (Spotify with their own account, the videos in their own
+ * screen).
  */
 
 export type RoomRole = "host" | "guest";
@@ -69,6 +73,8 @@ export interface RoomTrack {
   spotify?: { uri: string; url: string; cover?: string };
   /** A YouTube video: each listener plays it in their own YouTube screen. */
   youtube?: { id: string; blocked?: boolean };
+  /** A Bilibili video part: each listener plays it in their own Bilibili screen. */
+  bilibili?: { bvid: string; p: number; cover?: string; blocked?: boolean };
 }
 
 export interface RoomLibrary {
@@ -175,6 +181,7 @@ export function projectedPosition(
 export function toRoomTrack(track: TavernTrack): RoomTrack {
   const spotify = isSpotifyTrack(track) && track.spotifyUri;
   const youtube = isYouTubeTrack(track) && track.youtubeId;
+  const bilibili = isBilibiliTrack(track) && track.bilibiliId;
   return {
     look: track.look ?? hashText(track.id + track.fileName),
     id: track.id,
@@ -189,17 +196,27 @@ export function toRoomTrack(track: TavernTrack): RoomTrack {
     mimeType: track.mimeType,
     available: spotify
       ? true
-      : youtube
+      : youtube || bilibili
         ? track.status === "ready"
         : track.status === "ready" && Boolean(track.objectUrl),
-    // Spotify / YouTube pictures come straight from them, never through the tavern
-    hasCover: spotify || youtube ? false : Boolean(track.coverUrl),
+    // Spotify / YouTube / Bilibili pictures come straight from them, never through the tavern
+    hasCover: spotify || youtube || bilibili ? false : Boolean(track.coverUrl),
     addedAt: track.addedAt,
     ...(spotify
       ? { spotify: { uri: track.spotifyUri!, url: track.spotifyUrl ?? "", cover: track.coverUrl } }
       : {}),
     ...(youtube
       ? { youtube: { id: track.youtubeId!, ...(track.status !== "ready" ? { blocked: true } : {}) } }
+      : {}),
+    ...(bilibili
+      ? {
+          bilibili: {
+            bvid: track.bilibiliId!,
+            p: track.bilibiliPage ?? 1,
+            ...(track.coverUrl ? { cover: track.coverUrl } : {}),
+            ...(track.status !== "ready" ? { blocked: true } : {}),
+          },
+        }
       : {}),
   };
 }
@@ -225,6 +242,28 @@ export function fromRoomTrack(raw: RoomTrack, key: string): TavernTrack {
     mimeType: text(raw.mimeType, "audio/mpeg"),
     addedAt: Number(raw.addedAt) || 0,
   };
+  const bvid = raw.bilibili && text(raw.bilibili.bvid);
+  const part = raw.bilibili ? Math.floor(Number(raw.bilibili.p)) : 0;
+  if (bvid && BILIBILI_BVID.test(bvid) && part >= 1 && part <= 9999) {
+    const cover = text(raw.bilibili!.cover);
+    return {
+      ...toBilibiliTrack({
+        bvid,
+        p: part,
+        title: track.title,
+        author: track.artist,
+        duration: track.duration,
+        ...(/^https:\/\/[a-z0-9.-]*hdslb\.com\//.test(cover) ? { cover } : {}),
+        ...(raw.bilibili!.blocked ? { blocked: true } : {}),
+      }),
+      id: track.id,
+      alias: track.alias,
+      tags: track.tags,
+      glass: track.glass,
+      tint: track.tint,
+      look: typeof track.look === "number" ? track.look : undefined,
+    };
+  }
   const youtubeId = raw.youtube && text(raw.youtube.id);
   if (youtubeId && YOUTUBE_ID.test(youtubeId)) {
     return {

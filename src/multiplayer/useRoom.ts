@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  isBilibiliTrack,
   isSpotifyTrack,
+  isStreamTrack,
   isYouTubeTrack,
   type PlaybackMode,
   type TavernPlaylist,
@@ -9,6 +11,7 @@ import {
 import { spotifyEngine } from "../integrations/spotify/player";
 import { isSignedIn, setRoomClientId } from "../integrations/spotify/auth";
 import { youtubeEngine } from "../integrations/youtube/player";
+import { bilibiliEngine, bilibiliKey } from "../integrations/bilibili/player";
 import {
   RoomConnection,
   fetchRoomInfo,
@@ -240,23 +243,28 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     const track = b.tracks.find((t) => t.id === b.currentTrackId);
     const actor = actorRef.current;
     const spotify = isSpotifyTrack(track);
+    const audible = b.isPlaying && Boolean(track) && b.audible();
+    // a Bilibili screen reloading on the host (a jump): friends hold, not pause
+    const buffering = b.isPlaying && !audible && isBilibiliTrack(track);
     void conn
       .post("snapshot", {
         trackId: track?.status === "ready" ? track.id : undefined,
         // a Spotify song counts as playing once it really started on the host
-        isPlaying: b.isPlaying && Boolean(track) && b.audible(),
+        isPlaying: audible,
         position: b.position(),
         duration: spotify
           ? spotifyEngine.durationMs / 1000 || track!.duration
           : isYouTubeTrack(track)
             ? youtubeEngine.durationS || track!.duration
-            : audio && Number.isFinite(audio.duration) && audio.duration > 0
+            : isBilibiliTrack(track)
+              ? bilibiliEngine.durationS || track!.duration
+              : audio && Number.isFinite(audio.duration) && audio.duration > 0
             ? audio.duration
             : (track?.duration ?? 0),
         mode: b.playbackMode,
         by: actor?.name ?? connRef.current?.name,
         byId: actor?.id ?? connRef.current?.id,
-        reason: actor?.reason ?? reason,
+        reason: buffering ? "buffering" : (actor?.reason ?? reason),
       })
       .catch(() => {});
   }, []);
@@ -295,7 +303,7 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
         .catch(() => {});
       for (const track of tracks) {
         // Spotify artwork stays on Spotify's servers; guests load it from there
-        if (!track.coverUrl || isSpotifyTrack(track) || coversSent.current.has(track.id)) continue;
+        if (!track.coverUrl || isStreamTrack(track) || coversSent.current.has(track.id)) continue;
         coversSent.current.add(track.id);
         try {
           const blob = await fetch(track.coverUrl).then((r) => r.blob());
@@ -350,6 +358,8 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
       spotifyEngine.on("seeked", () => publish("seek")),
       youtubeEngine.on("started", () => publish("tick")),
       youtubeEngine.on("seeked", () => publish("seek")),
+      bilibiliEngine.on("started", () => publish("tick")),
+      bilibiliEngine.on("seeked", () => publish("seek")),
     ];
     return () => {
       audio?.removeEventListener("seeked", onSeeked);
@@ -470,6 +480,56 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     }
   };
 
+  const bilibiliSync = useRef({ lastStart: 0, lastSeek: 0, rev: -1 });
+
+  /**
+   * A Bilibili video plays in this friend's own screen. Its player can only be
+   * told where to start, so every correction is a new load: start a little
+   * ahead (by how long a load takes here) and only correct big differences.
+   */
+  const syncBilibili = (conn: RoomConnection, snap: RoomSnapshot, track: TavernTrack) => {
+    const engine = bilibiliEngine;
+    const s = bilibiliSync.current;
+    const bvid = track.bilibiliId ?? "";
+    const part = track.bilibiliPage ?? 1;
+    const key = bilibiliKey(bvid, part);
+    const target = projectedPosition(snap, conn.now());
+    bridgeRef.current.showProgress(target, snap.duration || track.duration);
+    if (!bvid || track.status !== "ready") return;
+    const now = performance.now();
+    const fresh = snap.rev !== s.rev;
+    s.rev = snap.rev;
+    if (!snap.isPlaying) {
+      // the host's own screen is reloading after a jump: keep going until it's back
+      if (snap.reason === "buffering") return;
+      if (engine.isOn(key) && engine.wantPlaying) engine.pause();
+      return;
+    }
+    const lead = () => {
+      const live = snapshotRef.current && snapshotRef.current.trackId === snap.trackId ? snapshotRef.current : snap;
+      return projectedPosition(live, conn.now()) + engine.loadS + engine.bootS;
+    };
+    if (!engine.isOn(key) || engine.finished) {
+      if (now - s.lastStart < 4000) return;
+      if (snap.duration > 0 && target > snap.duration - 2) return; // about to end: wait for the next one
+      s.lastStart = now;
+      engine.play(bvid, part, lead, { duration: snap.duration || track.duration, title: track.title });
+      return;
+    }
+    if (!engine.wantPlaying) {
+      if (now - s.lastStart < 4000) return;
+      s.lastStart = now;
+      engine.resume(lead);
+      return;
+    }
+    if (engine.starting) return;
+    const drift = engine.position() - target;
+    if (Math.abs(drift) > 2.5 && (now - s.lastSeek > 8000 || fresh)) {
+      s.lastSeek = now;
+      engine.seek(lead());
+    }
+  };
+
   const syncAudio = useCallback(() => {
     const conn = connRef.current;
     const snap = snapshotRef.current;
@@ -482,6 +542,10 @@ export function useRoom(inviteKey: string | undefined, bridge: RoomBridge) {
     }
     if (isYouTubeTrack(track)) {
       syncYouTube(conn, snap, track!);
+      return;
+    }
+    if (isBilibiliTrack(track)) {
+      syncBilibili(conn, snap, track!);
       return;
     }
     if (!audio) return;

@@ -7,6 +7,7 @@ import {
   FileUp,
   ListMusic,
   MonitorPlay,
+  Clapperboard,
   Music2,
   Pause,
   Play,
@@ -246,6 +247,13 @@ function MoreMenu({
               () => model.setYouTubePanelOpen(true),
               t("不用账号，朋友也能一起看"),
             )}
+          {!model.isGuest &&
+            item(
+              t("B站歌单"),
+              <Clapperboard size={17} />,
+              () => model.setBilibiliPanelOpen(true),
+              t("视频、合集、收藏夹，朋友也能一起看"),
+            )}
           {item(
             t("同席 · 一起听"),
             <Users size={17} />,
@@ -351,7 +359,11 @@ function SpotifyCredit({ model }: { model: TavernController }) {
   return (
     <div className="spotify-credit">
       {currentTrack.coverUrl && (
-        <img src={currentTrack.coverUrl} alt={t("《{album}》封面", { album: currentTrack.album })} />
+        <img
+          src={currentTrack.coverUrl}
+          alt={t("《{album}》封面", { album: currentTrack.album })}
+          referrerPolicy="no-referrer"
+        />
       )}
       <span className="spotify-credit-text">
         <span>

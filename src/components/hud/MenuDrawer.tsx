@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Check,
+  Clapperboard,
   ExternalLink,
   FileDown,
   FileUp,
@@ -27,8 +28,9 @@ import {
 import type { TavernController } from "../../app/useTavernController";
 import { GlassIcon } from "./GlassIcon";
 import { getLang, t } from "../../i18n";
-import { isSpotifyTrack, YOUTUBE_KEEP_MS } from "../../storage";
+import { isSpotifyTrack, isStreamPage, YOUTUBE_KEEP_MS } from "../../storage";
 import { youtubeWatchUrl } from "../../integrations/youtube/catalog";
+import { bilibiliWatchUrl } from "../../integrations/bilibili/catalog";
 
 /**
  * The drink menu: playlists are menu sections, songs are drinks with the
@@ -75,10 +77,19 @@ export function MenuDrawer({
     setYouTubePanelOpen,
     setYouTubeRefreshId,
     removeYouTubeVideo,
+    setBilibiliPanelOpen,
+    setBilibiliRefreshId,
+    removeBilibiliVideo,
     isPlayable,
   } = model;
   const spotifyPage = selectedPlaylist?.spotify;
   const youtubePage = selectedPlaylist?.youtube;
+  const bilibiliPage = selectedPlaylist?.bilibili;
+  const refreshBilibili = () => {
+    if (!selectedPlaylist?.bilibili || selectedPlaylist.bilibili.kind === "picks") return;
+    setBilibiliRefreshId(selectedPlaylist.id);
+    setBilibiliPanelOpen(true);
+  };
   /** YouTube's 30-day limit passed: the page needs reading again. */
   const youtubeExpired = Boolean(
     youtubePage &&
@@ -160,7 +171,7 @@ export function MenuDrawer({
               {playlists.map((playlist) => (
                 <button
                   key={playlist.id}
-                  className={`menu-section ${playlist.id === selectedPlaylist?.id ? "is-active" : ""} ${playlist.spotify ? "is-spotify" : ""} ${playlist.youtube ? "is-youtube" : ""}`}
+                  className={`menu-section ${playlist.id === selectedPlaylist?.id ? "is-active" : ""} ${playlist.spotify ? "is-spotify" : ""} ${playlist.youtube ? "is-youtube" : ""} ${playlist.bilibili ? "is-bilibili" : ""}`}
                   onClick={() => setSelectedPlaylistId(playlist.id)}
                   aria-pressed={playlist.id === selectedPlaylist?.id}
                   data-tip={
@@ -168,13 +179,17 @@ export function MenuDrawer({
                       ? t("Spotify 歌单")
                       : playlist.youtube
                         ? t("YouTube 歌单")
-                        : undefined
+                        : playlist.bilibili
+                          ? t("B站歌单")
+                          : undefined
                   }
                 >
                   {playlist.spotify ? (
                     <Music2 size={12} className="spotify-mark" aria-hidden="true" />
                   ) : playlist.youtube ? (
                     <MonitorPlay size={12} className="youtube-mark" aria-hidden="true" />
+                  ) : playlist.bilibili ? (
+                    <Clapperboard size={12} className="bilibili-mark" aria-hidden="true" />
                   ) : (
                     <span className="wax" aria-hidden="true" />
                   )}
@@ -257,7 +272,9 @@ export function MenuDrawer({
                         ? t("撕下「{name}」？Spotify 上的歌单不受影响。", { name: selectedPlaylist.name })
                         : selectedPlaylist.youtube
                           ? t("撕下「{name}」？YouTube 上的视频不受影响。", { name: selectedPlaylist.name })
-                          : t("撕下「{name}」？歌曲仍留在酒窖。", { name: t(selectedPlaylist.name) })}
+                          : selectedPlaylist.bilibili
+                            ? t("撕下「{name}」？B站上的视频不受影响。", { name: t(selectedPlaylist.name) })
+                            : t("撕下「{name}」？歌曲仍留在酒窖。", { name: t(selectedPlaylist.name) })}
                     </span>
                     <button
                       className="danger"
@@ -300,6 +317,28 @@ export function MenuDrawer({
                       >
                         <ExternalLink size={14} />
                       </a>
+                    )}
+                    {bilibiliPage && bilibiliPage.kind !== "picks" && (
+                      <a
+                        className="ghost-icon"
+                        href={bilibiliPage.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={t("在 B站打开这个列表")}
+                        data-tip={t("在 B站打开")}
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    {bilibiliPage && bilibiliPage.kind !== "picks" && !isGuest && (
+                      <button
+                        className="ghost-icon"
+                        aria-label={t("从 B站重新读取")}
+                        data-tip={t("从 B站刷新")}
+                        onClick={refreshBilibili}
+                      >
+                        <RefreshCw size={14} />
+                      </button>
                     )}
                     {youtubePage?.list && !isGuest && (
                       <button
@@ -369,7 +408,15 @@ export function MenuDrawer({
             </label>
 
             <ol className="drink-list">
-              {!visibleTrackIds.length && youtubePage && !searchTerm ? (
+              {!visibleTrackIds.length && bilibiliPage && !searchTerm ? (
+                <li className="drink-empty">
+                  <button onClick={() => !isGuest && setBilibiliPanelOpen(true)}>
+                    <Clapperboard size={30} />
+                    <strong>{t("这页还没有能播放的视频")}</strong>
+                    <span>{isGuest ? t("等房主那边放上视频。") : t("点这里粘贴 B站视频、合集或收藏夹链接。")}</span>
+                  </button>
+                </li>
+              ) : !visibleTrackIds.length && youtubePage && !searchTerm ? (
                 <li className="drink-empty">
                   <button
                     onClick={() => {
@@ -447,7 +494,9 @@ export function MenuDrawer({
                   const fromSpotify = isSpotifyTrack(track);
                   const streamed = Boolean(track.source);
                   const offline = fromSpotify && !isGuest && !isPlayable(track);
-                  const fixedOrder = Boolean(spotifyPage || youtubePage?.list);
+                  const fixedOrder = Boolean(
+                    spotifyPage || youtubePage?.list || (bilibiliPage && bilibiliPage.kind !== "picks"),
+                  );
                   return (
                     <li
                       key={track.id}
@@ -512,6 +561,8 @@ export function MenuDrawer({
                               <em className="warn">
                                 {track.youtubeId
                                   ? t("不能在别的网站播放")
+                                  : track.bilibiliId
+                                    ? t("B站上已失效")
                                   : isGuest
                                     ? t("房主缺原酒")
                                     : t("需重新导入")}
@@ -544,6 +595,28 @@ export function MenuDrawer({
                         >
                           <ExternalLink size={14} />
                         </a>
+                      )}
+                      {track.bilibiliId && (
+                        <a
+                          className="ghost-icon edit"
+                          href={bilibiliWatchUrl(track.bilibiliId, track.bilibiliPage ?? 1)}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={t("在 B站打开这个视频")}
+                          data-tip={t("在 B站打开")}
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                      )}
+                      {track.bilibiliId && bilibiliPage?.kind === "picks" && !isGuest && (
+                        <button
+                          className="ghost-icon edit"
+                          aria-label={t("从点歌单里拿掉")}
+                          data-tip={t("拿掉")}
+                          onClick={() => removeBilibiliVideo(selectedPlaylist!.id, track.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       )}
                       {track.youtubeId && youtubePage && !youtubePage.list && !isGuest && (
                         <button
@@ -584,6 +657,9 @@ export function MenuDrawer({
               </button>
               <button onClick={() => setYouTubePanelOpen(true)}>
                 <MonitorPlay size={15} /> YouTube
+              </button>
+              <button onClick={() => setBilibiliPanelOpen(true)}>
+                <Clapperboard size={15} /> {t("B站")}
               </button>
               <button onClick={() => configInputRef.current?.click()}>
                 <FileUp size={15} /> {t("导入菜单")}
@@ -726,7 +802,7 @@ function DrinkEditor({ model }: { model: TavernController }) {
       <fieldset className="note-field">
         <legend>{t("放入菜单")}</legend>
         <div className="playlist-checks">
-          {playlists.filter((playlist) => !playlist.spotify && !playlist.youtube).map((playlist) => (
+          {playlists.filter((playlist) => !isStreamPage(playlist)).map((playlist) => (
             <label key={playlist.id}>
               <input
                 type="checkbox"

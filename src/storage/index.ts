@@ -29,11 +29,14 @@ export interface TavernTrack {
    * is played by each listener's own Spotify account and never stored,
    * downloaded or relayed — the tavern only knows its URI and metadata.
    */
-  source?: "spotify" | "youtube";
+  source?: "spotify" | "youtube" | "bilibili";
   /** spotify:track:… */
   spotifyUri?: string;
   /** An 11-character YouTube video ID, played in the tavern's visible YouTube screen. */
   youtubeId?: string;
+  /** A Bilibili video (BV…) and part, played in the tavern's Bilibili screen. */
+  bilibiliId?: string;
+  bilibiliPage?: number;
   /** The track on open.spotify.com (Spotify asks for a link back). */
   spotifyUrl?: string;
   status: TrackStatus;
@@ -76,6 +79,39 @@ export interface YouTubeLink {
 
 export const YOUTUBE_KEEP_MS = 30 * 24 * 3600 * 1000;
 
+/** One part of a Bilibili video on a menu page. */
+export interface BilibiliItem {
+  /** BV… */
+  bvid: string;
+  /** Part number (分P), from 1. */
+  p: number;
+  title: string;
+  author: string;
+  /** Seconds (from Bilibili); 0 if unknown. */
+  duration: number;
+  /** https://i0.hdslb.com/… picture, if Bilibili gave one. */
+  cover?: string;
+  /** Bilibili said it's gone (deleted, hidden, under review). */
+  blocked?: boolean;
+}
+
+export type BilibiliKind = "picks" | "parts" | "season" | "series" | "favorites";
+
+/**
+ * A menu page made of Bilibili videos: a collection (合集), a series, a public
+ * favourites folder, the parts of one video, or videos added one by one.
+ */
+export interface BilibiliLink {
+  kind: BilibiliKind;
+  /** The collection / series / folder / video it was read from (absent for picks). */
+  id?: string;
+  /** Owner's space ID (collections and series need it to be read again). */
+  mid?: string;
+  url: string;
+  items: BilibiliItem[];
+  fetchedAt: number;
+}
+
 export interface TavernPlaylist {
   id: string;
   name: string;
@@ -84,6 +120,7 @@ export interface TavernPlaylist {
   trackIds: string[];
   spotify?: SpotifyLink;
   youtube?: YouTubeLink;
+  bilibili?: BilibiliLink;
 }
 
 export interface PersistedTrack extends Omit<
@@ -212,12 +249,21 @@ export const isSpotifyTrack = (track?: Pick<TavernTrack, "source">) =>
   track?.source === "spotify";
 export const isYouTubeTrack = (track?: Pick<TavernTrack, "source">) =>
   track?.source === "youtube";
-/** Spotify and YouTube songs stream from elsewhere; everything else is a local file. */
+export const isBilibiliTrack = (track?: Pick<TavernTrack, "source">) =>
+  track?.source === "bilibili";
+/** Spotify, YouTube and Bilibili songs stream from elsewhere; everything else is a local file. */
 export const isStreamTrack = (track?: Pick<TavernTrack, "source">) =>
   Boolean(track?.source);
 
 export const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 export const youtubeTrackId = (videoId: string) => `youtube-${videoId}`;
+
+export const BILIBILI_BVID = /^BV1[0-9A-Za-z]{9}$/;
+export const bilibiliTrackId = (bvid: string, p = 1) => `bilibili-${bvid}-${p}`;
+const BILIBILI_TRACK_ID = /^bilibili-BV1[0-9A-Za-z]{9}-\d{1,4}$/;
+/** Pages that hold their own songs (not local files): Spotify, YouTube and Bilibili pages. */
+export const isStreamPage = (playlist?: TavernPlaylist) =>
+  Boolean(playlist?.spotify || playlist?.youtube || playlist?.bilibili);
 
 /** A YouTube page past YouTube's 30-day limit keeps its link but forgets its videos. */
 export function expireYouTube(playlist: TavernPlaylist, now = Date.now()): TavernPlaylist {
@@ -238,6 +284,53 @@ export function persistablePlaylists(playlists: TavernPlaylist[]): TavernPlaylis
 
 const text = (value: unknown, max: number) =>
   typeof value === "string" ? value.slice(0, max) : "";
+
+const BILIBILI_KINDS: BilibiliKind[] = ["picks", "parts", "season", "series", "favorites"];
+const BILIBILI_COVER = /^https:\/\/[a-z0-9.-]*hdslb\.com\//;
+
+/** Whatever a saved menu or the host says about a Bilibili page, keep only clean fields. */
+export function cleanBilibiliLink(value: unknown): BilibiliLink | undefined {
+  const link = value as BilibiliLink | undefined;
+  if (!link || typeof link !== "object" || !Array.isArray(link.items)) return;
+  const kind = BILIBILI_KINDS.includes(link.kind) ? link.kind : "picks";
+  const id = typeof link.id === "string" && /^[A-Za-z0-9]{1,24}$/.test(link.id) ? link.id : undefined;
+  const mid = typeof link.mid === "string" && /^\d{1,20}$/.test(link.mid) ? link.mid : undefined;
+  const seen = new Set<string>();
+  const items: BilibiliItem[] = [];
+  for (const raw of link.items.slice(0, 500)) {
+    const item = raw as BilibiliItem;
+    const p = Number(item?.p) || 1;
+    if (!item || !BILIBILI_BVID.test(String(item.bvid)) || p < 1 || p > 9999) continue;
+    const key = `${item.bvid}-${p}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const cover = typeof item.cover === "string" && BILIBILI_COVER.test(item.cover) ? item.cover : "";
+    items.push({
+      bvid: item.bvid,
+      p: Math.floor(p),
+      title: text(item.title, 200),
+      author: text(item.author, 120),
+      duration:
+        typeof item.duration === "number" && Number.isFinite(item.duration)
+          ? Math.max(0, Math.min(86_400, item.duration))
+          : 0,
+      ...(cover ? { cover: cover.slice(0, 300) } : {}),
+      ...(item.blocked ? { blocked: true } : {}),
+    });
+  }
+  const fetchedAt = Number(link.fetchedAt);
+  const url = typeof link.url === "string" && /^https:\/\/([a-z0-9-]+\.)*bilibili\.com\//.test(link.url)
+    ? link.url.slice(0, 300)
+    : "https://www.bilibili.com/";
+  return {
+    kind,
+    ...(id ? { id } : {}),
+    ...(mid ? { mid } : {}),
+    url,
+    items,
+    fetchedAt: Number.isFinite(fetchedAt) && fetchedAt > 0 ? Math.min(fetchedAt, Date.now()) : 0,
+  };
+}
 
 /** Whatever a saved menu or the host says about a YouTube page, keep only clean fields. */
 export function cleanYouTubeLink(value: unknown): YouTubeLink | undefined {
@@ -364,6 +457,7 @@ export function parseLibraryConfig(text: string): TavernLibrary {
     playlistIds.add(playlist.id);
     const spotify = cleanSpotifyLink(playlist.spotify);
     const youtube = spotify ? undefined : cleanYouTubeLink(playlist.youtube);
+    const bilibili = spotify || youtube ? undefined : cleanBilibiliLink(playlist.bilibili);
     return expireYouTube({
       id: playlist.id,
       name: playlist.name,
@@ -372,9 +466,12 @@ export function parseLibraryConfig(text: string): TavernLibrary {
         ? []
         : youtube
           ? youtube.items.map((item) => youtubeTrackId(item.id))
-          : [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
+          : bilibili
+            ? bilibili.items.map((item) => bilibiliTrackId(item.bvid, item.p))
+            : [...new Set(playlist.trackIds.filter((id) => ids.has(id)))],
       ...(spotify ? { spotify } : {}),
       ...(youtube ? { youtube } : {}),
+      ...(bilibili ? { bilibili } : {}),
     });
   });
   if (!playlists.length) playlists.push(...createDefaultLibrary().playlists);
@@ -388,7 +485,8 @@ export function parseLibraryConfig(text: string): TavernLibrary {
     currentTrackId:
       value.currentTrackId &&
       (ids.has(value.currentTrackId) ||
-        /^(spotify-[A-Za-z0-9]{22}|youtube-[A-Za-z0-9_-]{11})$/.test(value.currentTrackId))
+        /^(spotify-[A-Za-z0-9]{22}|youtube-[A-Za-z0-9_-]{11})$/.test(value.currentTrackId) ||
+        BILIBILI_TRACK_ID.test(value.currentTrackId))
         ? value.currentTrackId
         : undefined,
     playbackMode: ["sequence", "shuffle", "repeat-one", "repeat-all"].includes(
